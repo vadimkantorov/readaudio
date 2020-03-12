@@ -18,7 +18,7 @@ ffplay -f s16le -ac 1 -ar 8000 out1.raw
 # compile a shared library for interfacing with NumPy
 gcc -o decode_audio.so -shared -fPIC decode_audio.c -lavformat -lavcodec -lswresample -lavutil
 
-# convert audio to raw format and compare to etalon. DOES NOT WORK YET
-python3 decode_audio_ctypes.py test.wav out2.raw
+# convert audio to raw format and compare to etalon
+python3 decode_audio.py test.wav out2.raw
 diff out0.raw outw.raw
 ```

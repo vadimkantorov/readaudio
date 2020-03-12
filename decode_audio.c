@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdbool.h>
 
 #include <libavutil/frame.h>
 #include <libavutil/mem.h>
@@ -8,34 +9,17 @@
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
 
-static int get_format_from_sample_fmt(const char **fmt,
-                                      enum AVSampleFormat sample_fmt)
+struct Audio
 {
-    int i;
-    struct sample_fmt_entry {
-        enum AVSampleFormat sample_fmt; const char *fmt_be, *fmt_le;
-    } sample_fmt_entries[] = {
-        { AV_SAMPLE_FMT_U8,  "u8",    "u8"    },
-        { AV_SAMPLE_FMT_S16, "s16be", "s16le" },
-        { AV_SAMPLE_FMT_S32, "s32be", "s32le" },
-        { AV_SAMPLE_FMT_FLT, "f32be", "f32le" },
-        { AV_SAMPLE_FMT_DBL, "f64be", "f64le" },
-    };
-    *fmt = NULL;
+	char fmt[8];
+	uint32_t sample_rate;
+	uint8_t num_channels;
+	uint64_t num_samples;
+	uint8_t itemsize;
+	uint8_t* data;
+};
 
-    for (i = 0; i < FF_ARRAY_ELEMS(sample_fmt_entries); i++) {
-        struct sample_fmt_entry *entry = &sample_fmt_entries[i];
-        if (sample_fmt == entry->sample_fmt) {
-            *fmt = AV_NE(entry->fmt_be, entry->fmt_le);
-            return 0;
-        }
-    }
-
-    fprintf(stderr, "sample format %s is not supported as output format\n", av_get_sample_fmt_name(sample_fmt));
-    return -1;
-}
-
-int decode_packet(AVCodecContext *avctx, AVPacket *pkt, FILE* outfile)
+int decode_packet(AVCodecContext *avctx, AVPacket *pkt, uint8_t** data, int itemsize)
 {
 	AVFrame *frame = av_frame_alloc();
 	int ret = avcodec_send_packet(avctx, pkt);
@@ -44,10 +28,9 @@ int decode_packet(AVCodecContext *avctx, AVPacket *pkt, FILE* outfile)
 		ret = avcodec_receive_frame(avctx, frame);
 		if (ret == 0)
 		{
-			int data_size = av_get_bytes_per_sample(frame->format);
 			for (int i = 0; i < frame->nb_samples; i++)
 				for (int ch = 0; ch < avctx->channels; ch++)
-					fwrite(frame->data[ch] + data_size*i, 1, data_size, outfile);
+					*data = memcpy(*data, frame->data[ch] + itemsize * i, itemsize) + itemsize;
 		}
 	}
 
@@ -58,37 +41,18 @@ int decode_packet(AVCodecContext *avctx, AVPacket *pkt, FILE* outfile)
 	return ret;
 }
 
-struct Audio
+struct Audio decode_audio(const char* input_path)
 {
-	char fmt[8];
-	uint8_t num_channels;
-	uint64_t num_samples;
-	uint8_t* data;
-};
+	struct Audio audio = {0};
 
-struct Audio decode_audio_(const char* input_path)
-{
-	puts(input_path);
-	return (struct Audio) {.fmt = "s16le", .num_channels = 2, .num_samples = 100, .data = malloc(2 * 100 * 2)};
-}
-
-int main(int argc, char **argv)
-{
     AVCodec *codec = NULL;
     AVCodecContext *c = NULL;
     AVCodecParserContext *parser = NULL;
 
-    if (argc <= 2) {
-        fprintf(stderr, "Usage: %s <input file> <output file>\n", argv[0]);
-        exit(0);
-    }
-    const char* filename    = argv[1];
-    const char* outfilename = argv[2];
-
 	av_register_all();
-	AVFormatContext *pFormatCtx;// = avformat_alloc_context();
+	AVFormatContext *pFormatCtx = NULL;
 
-	if (avformat_open_input(&pFormatCtx, argv[1], NULL, NULL) != 0) {
+	if (avformat_open_input(&pFormatCtx, input_path, NULL, NULL) != 0) {
         fprintf(stderr, "Could not open file\n");
         exit(1);
     }
@@ -100,7 +64,7 @@ int main(int argc, char **argv)
 
 	int stream_index = av_find_best_stream(pFormatCtx, AVMEDIA_TYPE_AUDIO, -1, -1, NULL, 0);
 	if (stream_index < 0) {
-		fprintf(stderr, "Could not find %s stream in input file '%s'\n", av_get_media_type_string(AVMEDIA_TYPE_AUDIO), filename);
+		fprintf(stderr, "Could not find %s stream\n", av_get_media_type_string(AVMEDIA_TYPE_AUDIO));
 		exit(1);
 	}
 	AVStream *stream = pFormatCtx->streams[stream_index];
@@ -127,38 +91,76 @@ int main(int argc, char **argv)
         exit(1);
     }
 
-    FILE *outfile = fopen(outfilename, "wb");
+	enum AVSampleFormat sample_fmt = c->sample_fmt;
+	if (av_sample_fmt_is_planar(sample_fmt)) {
+        const char *packed = av_get_sample_fmt_name(sample_fmt);
+        printf("Warning: the sample format the decoder produced is planar "
+               "(%s). This example will output the first channel only.\n",
+               packed ? packed : "?");
+        sample_fmt = av_get_packed_sample_fmt(c->sample_fmt);
+    }
+    
+    struct sample_fmt_entry {enum AVSampleFormat sample_fmt; const char *fmt_be, *fmt_le; } sample_fmt_entries[] = {
+        { AV_SAMPLE_FMT_U8,  "u8",    "u8"    },
+        { AV_SAMPLE_FMT_S16, "s16be", "s16le" },
+        { AV_SAMPLE_FMT_S32, "s32be", "s32le" },
+        { AV_SAMPLE_FMT_FLT, "f32be", "f32le" },
+        { AV_SAMPLE_FMT_DBL, "f64be", "f64le" },
+    };
 
+    int i;
+	for (i = 0; i < FF_ARRAY_ELEMS(sample_fmt_entries); i++) {
+        struct sample_fmt_entry *entry = &sample_fmt_entries[i];
+        if (sample_fmt == entry->sample_fmt) {
+            strcpy(audio.fmt, AV_NE(entry->fmt_be, entry->fmt_le));
+			i = -1;
+			break;
+        }
+    }
+
+    if (i != -1)
+	{
+		fprintf(stderr, "Could not deduce format\n");
+		exit(1);
+	}
+
+	audio.num_channels = c->channels;
+	audio.sample_rate = c->sample_rate;
+	audio.num_samples  = ((pFormatCtx->duration / (float) AV_TIME_BASE) * c->sample_rate);
+	audio.itemsize = av_get_bytes_per_sample(sample_fmt);
+	audio.data = calloc(audio.num_samples * audio.num_channels, audio.itemsize);
+
+	uint8_t* data_ptr = audio.data;
     AVPacket* pkt = av_packet_alloc();
 	while (av_read_frame(pFormatCtx, pkt) >= 0)
 	{
-		if (pkt->stream_index == stream_index && decode_packet(c, pkt, outfile) < 0)
+		if (pkt->stream_index == stream_index && decode_packet(c, pkt, &data_ptr, audio.itemsize) < 0)
 			break;
 		av_packet_unref(pkt);
 	}
 
     pkt->data = NULL;
     pkt->size = 0;
-	decode_packet(c, pkt, outfile);
+	decode_packet(c, pkt, &data_ptr, audio.itemsize);
 
-    enum AVSampleFormat sfmt = c->sample_fmt;
-	if (av_sample_fmt_is_planar(sfmt)) {
-        const char *packed = av_get_sample_fmt_name(sfmt);
-        printf("Warning: the sample format the decoder produced is planar "
-               "(%s). This example will output the first channel only.\n",
-               packed ? packed : "?");
-        sfmt = av_get_packed_sample_fmt(c->sample_fmt);
-    }
-
-    const char *fmt = NULL;
-    if (get_format_from_sample_fmt(&fmt, sfmt) < 0)
-        goto end;
-
-    printf("Play the output audio file with the command:\nffplay -f %s -ac %d -ar %d %s\n", fmt, c->channels, c->sample_rate, outfilename);
 end:
-    fclose(outfile);
     avcodec_free_context(&c);
     av_packet_free(&pkt);
 
-    return 0;
+    return audio;
+}
+
+int main(int argc, char **argv)
+{
+    if (argc <= 2) {
+        fprintf(stderr, "Usage: %s <input file> <output file>\n", argv[0]);
+        exit(0);
+    }
+	
+	struct Audio audio = decode_audio(argv[1]);
+    
+	printf("ffplay -f %s -ac %d -ar %d -i %s # num samples: %d\n", audio.fmt, (int)audio.num_channels, (int)audio.sample_rate, argv[1], (int)audio.num_samples);
+	FILE *out = fopen(argv[2], "wb");
+	fwrite(audio.data, audio.itemsize, audio.num_samples * audio.num_channels, out);
+	fclose(out);
 }
