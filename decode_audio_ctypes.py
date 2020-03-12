@@ -1,3 +1,4 @@
+import os
 import sys
 import ctypes
 import numpy as np
@@ -25,7 +26,7 @@ class DecodeAudio(ctypes.Structure):
 	def __call__(self, input_path):
 		return self.lib.decode_audio_(input_path.encode())
 
-decode_audio = DecodeAudio(ctypes.CDLL('./decode_audio.so'))
+decode_audio = DecodeAudio(ctypes.CDLL(os.path.abspath('decode_audio.so')))
 audio = decode_audio(sys.argv[1])
 
 arr = np.ctypeslib.as_array(audio.data, shape = (audio.nbytes, )).view(audio.dtype).reshape(audio.num_samples, audio.num_channels)
