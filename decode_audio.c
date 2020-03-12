@@ -58,6 +58,20 @@ int decode_packet(AVCodecContext *avctx, AVPacket *pkt, FILE* outfile)
 	return ret;
 }
 
+struct Audio
+{
+	char fmt[8];
+	uint8_t num_channels;
+	uint64_t num_samples;
+	void* data;
+};
+
+struct Audio decode_audio_(const char* input_path)
+{
+	puts(input_path);
+	return (struct Audio) {.fmt = "ABCDEFG", .num_channels = 2, .num_samples = 100, .data = NULL};
+}
+
 int main(int argc, char **argv)
 {
     AVCodec *codec = NULL;
