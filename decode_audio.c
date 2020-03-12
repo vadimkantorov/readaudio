@@ -63,13 +63,13 @@ struct Audio
 	char fmt[8];
 	uint8_t num_channels;
 	uint64_t num_samples;
-	void* data;
+	uint8_t* data;
 };
 
 struct Audio decode_audio_(const char* input_path)
 {
 	puts(input_path);
-	return (struct Audio) {.fmt = "ABCDEFG", .num_channels = 2, .num_samples = 100, .data = NULL};
+	return (struct Audio) {.fmt = "s16le", .num_channels = 2, .num_samples = 100, .data = malloc(2 * 100 * 2)};
 }
 
 int main(int argc, char **argv)
