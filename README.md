@@ -2,6 +2,8 @@ This repo is a primer in reading audio (via ffmpeg) into NumPy/PyTorch arrays wi
 
 At the bottom there is example of alternative solution using process launching. The first solution is preferable if you must load huge amounts of audio in various formats (for reading `*.wav` files, there is a standard Python [`wave`](https://docs.python.org/3/library/wave.html) module and [`scipy.io.wavfile.read`](https://docs.scipy.org/doc/scipy/reference/generated/scipy.io.wavfile.read.html).
 
+It is also a simple primer on basic ctypes usage for interfacing C code and NumPy/PyTorch.
+
 ```shell
 # create sample audio test.wav
 ffmpeg -f lavfi -i "sine=frequency=1000:duration=5" -c:a pcm_s16le -ar 8000 test.wav
