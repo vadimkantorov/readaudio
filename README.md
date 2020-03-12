@@ -5,6 +5,11 @@ At the bottom there is example of alternative solution using process launching. 
 It is also a simple primer on FFmpeg audio decoding loop and basic ctypes usage for interfacing C code and NumPy/PyTorch (without creating a full-blown PyTorch C++ extension).
 
 ```shell
+# install dependencies: ffmpeg executables and shared libraries on ubuntu
+apt-get install ffmpeg libavcodec-dev libavformat-dev
+```
+
+```shell
 # create sample audio test.wav
 ffmpeg -f lavfi -i "sine=frequency=1000:duration=5" -c:a pcm_s16le -ar 8000 test.wav
 
