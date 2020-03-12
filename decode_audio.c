@@ -12,10 +12,10 @@
 struct Audio
 {
 	char fmt[8];
-	uint32_t sample_rate;
-	uint8_t num_channels;
+	uint64_t sample_rate;
+	uint64_t num_channels;
 	uint64_t num_samples;
-	uint8_t itemsize;
+	uint64_t itemsize;
 	uint8_t* data;
 };
 
@@ -126,7 +126,7 @@ struct Audio decode_audio(const char* input_path)
 
 	audio.num_channels = c->channels;
 	audio.sample_rate = c->sample_rate;
-	audio.num_samples  = ((pFormatCtx->duration / (float) AV_TIME_BASE) * c->sample_rate);
+	audio.num_samples  = (pFormatCtx->duration / (float) AV_TIME_BASE) * audio.sample_rate;
 	audio.itemsize = av_get_bytes_per_sample(sample_fmt);
 	audio.data = calloc(audio.num_samples * audio.num_channels, audio.itemsize);
 

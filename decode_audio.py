@@ -6,10 +6,10 @@ import numpy as np
 class DecodeAudio(ctypes.Structure):
 	_fields_ = [
 		('fmt', ctypes.c_char * 8),
-		('sample_rate', ctypes.c_uint),
-		('num_channels', ctypes.c_ubyte),
+		('sample_rate', ctypes.c_ulonglong),
+		('num_channels', ctypes.c_ulonglong),
 		('num_samples', ctypes.c_ulonglong),
-		('itemsize', ctypes.c_ubyte),
+		('itemsize', ctypes.c_ulonglong),
 		('data', ctypes.POINTER(ctypes.c_ubyte))
 	]
 
@@ -30,7 +30,7 @@ class DecodeAudio(ctypes.Structure):
 
 decode_audio = DecodeAudio(ctypes.CDLL(os.path.abspath('decode_audio.so')))
 audio = decode_audio(sys.argv[1])
-print('ffplay', '-f', audio.fmt.decode(), '-ac', audio.num_channels, '-ar', audio.sample_rate, '-i', sys.argv[1], '# num samples:', audio.num_samples)
+print('ffplay', '-f', audio.fmt, '-ac', audio.num_channels, '-ar', audio.sample_rate, '-i', sys.argv[1], '# num samples:', audio.num_samples)
 
 arr = np.ctypeslib.as_array(audio.data, shape = (audio.nbytes, )).view(audio.dtype).reshape(audio.num_samples, audio.num_channels)
 arr.tofile(sys.argv[2])
