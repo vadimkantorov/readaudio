@@ -1,3 +1,7 @@
+This repo is a primer in reading audio (via ffmpeg) into NumPy/PyTorch arrays without copying data or process launching. Interfacing with FFmpeg is done in pure C code in [decode_audio.c](./decode_audio.c). Python wrapper is implemented in [decode_audio.py](./decode_audio.py) using a standard library module ctypes. C code returns a plain structure [Audio](./decode_audio.c#L12-L20). This structure is then interpeted and wrapped by NumPy or PyTorch without copy.
+
+At the bottom there is example of alternative solution using process launching. The first solution is preferable if you must load huge amounts of audio in various formats (for reading .wav there is a standard Python `wave` module and `scipy.io.wavfile`.
+
 ```shell
 # create sample audio test.wav
 ffmpeg -f lavfi -i "sine=frequency=1000:duration=5" -c:a pcm_s16le -ar 8000 test.wav
@@ -25,4 +29,22 @@ diff golden.raw numpy.raw
 # convert audio to raw format (PyTorch) and compare to etalon
 python3 decode_audio.py test.wav torch.raw
 diff golden.raw torch.raw
+```
+
+```python
+# read_audio.py. read audio using subprocess
+# python3 read_audio.py test.wav
+
+import sys
+import subprocess
+import struct
+
+format_ffmpeg, format_struct = [('s16le', 'h'), ('f32le', 'f'), ('u8', 'B'), ('s8', 'b')][0]
+sample_rate = 8_000 # resample
+num_channels = 1 # force mono
+
+audio = memoryview(subprocess.check_output(['ffmpeg', '-nostdin', '-hide_banner', '-loglevel', 'panic', '-i', sys.argv[1], '-f', format_ffmpeg, '-ar', str(sample_rate), '-ac', str(num_channels), '-']))
+audio = audio.cast(format_struct, shape = [len(audio) // num_channels // struct.calcsize(format_struct), num_channels])
+
+print('shape', audio.shape, 'itemsize', audio.itemsize, 'format', audio.format) # shape (40000, 1) itemsize 2 format h
 ```
