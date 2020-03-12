@@ -46,5 +46,6 @@ num_channels = 1 # force mono
 audio = memoryview(subprocess.check_output(['ffmpeg', '-nostdin', '-hide_banner', '-loglevel', 'panic', '-i', sys.argv[1], '-f', format_ffmpeg, '-ar', str(sample_rate), '-ac', str(num_channels), '-']))
 audio = audio.cast(format_struct, shape = [len(audio) // num_channels // struct.calcsize(format_struct), num_channels])
 
-print('shape', audio.shape, 'itemsize', audio.itemsize, 'format', audio.format) # shape (40000, 1) itemsize 2 format h
+print('shape', audio.shape, 'itemsize', audio.itemsize, 'format', audio.format)
+# shape (40000, 1) itemsize 2 format h
 ```
