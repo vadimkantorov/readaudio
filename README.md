@@ -12,7 +12,7 @@ gcc -o decode_audio decode_audio.c -lavformat -lavcodec -lswresample -lavutil
 ffplay -f s16le -ac 1 -ar 8000 out1.bin
 
 # compile a shared library for interfacing with NumPy
-gcc -o decode_audio.so -shared decode_audio.c -lavformat -lavcodec -lswresample -lavutil
+gcc -o decode_audio.so -shared -fPIC decode_audio.c -lavformat -lavcodec -lswresample -lavutil
 
 # (DOES NOT WORK YET) convert audio to raw format
 python3 decode_audio_ctypes.py test.wav out2.bin
