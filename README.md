@@ -1,6 +1,6 @@
 This repo is a primer in reading audio (via ffmpeg) into NumPy/PyTorch arrays without copying data or process launching. Interfacing with FFmpeg is done in pure C code in [decode_audio.c](./decode_audio.c). Python wrapper is implemented in [decode_audio.py](./decode_audio.py) using a standard library module ctypes. C code returns a plain structure [Audio](./decode_audio.c#L12-L20). This structure is then interpeted and wrapped by NumPy or PyTorch without copy.
 
-At the bottom there is example of alternative solution using process launching. The first solution is preferable if you must load huge amounts of audio in various formats (for reading `*.wav` files, there is a standard Python [`wave`](https://docs.python.org/3/library/wave.html) module and [`scipy.io.wavfile.read`](https://docs.scipy.org/doc/scipy/reference/generated/scipy.io.wavfile.read.html).
+At the bottom there is example of alternative solution using process launching. The first solution is preferable if you must load huge amounts of audio in various formats (for reading `*.wav` files, there exists a standard Python [`wave`](https://docs.python.org/3/library/wave.html) module and [`scipy.io.wavfile.read`](https://docs.scipy.org/doc/scipy/reference/generated/scipy.io.wavfile.read.html)).
 
 It is also a simple primer on FFmpeg audio decoding loop and basic ctypes usage for interfacing C code and NumPy/PyTorch (without creating a full-blown PyTorch C++ extension).
 
