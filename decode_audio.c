@@ -1,10 +1,10 @@
+// based on https://github.com/FFmpeg/FFmpeg/blob/master/doc/examples/decode_audio.c and https://github.com/FFmpeg/FFmpeg/blob/master/doc/examples/demuxing_decoding.c
+
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 
 #include <libavutil/frame.h>
 #include <libavutil/mem.h>
-
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
 
@@ -24,7 +24,8 @@ int decode_packet(AVCodecContext *avctx, AVPacket *pkt, uint8_t** data, int item
 	AVFrame *frame = av_frame_alloc();
 	int ret = avcodec_send_packet(avctx, pkt);
 	
-	while (ret >= 0) {
+	while (ret >= 0)
+	{
 		ret = avcodec_receive_frame(avctx, frame);
 		if (ret == 0)
 		{
@@ -158,10 +159,11 @@ end:
 
 int main(int argc, char **argv)
 {
-    if (argc <= 2) {
-        fprintf(stderr, "Usage: %s <input file> <output file>\n", argv[0]);
-        exit(0);
-    }
+	if (argc <= 2)
+	{
+		printf("Usage: %s <input file> <output file>\n", argv[0]);
+		return 1;
+	}
 	
 	struct Audio audio = decode_audio(argv[1]);
     
@@ -169,4 +171,5 @@ int main(int argc, char **argv)
 	FILE *out = fopen(argv[2], "wb");
 	fwrite(audio.data, audio.itemsize, audio.num_samples * audio.num_channels, out);
 	fclose(out);
+	return 0;
 }
