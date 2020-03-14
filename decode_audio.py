@@ -4,6 +4,7 @@ import ctypes
 
 class DecodeAudio(ctypes.Structure):
 	_fields_ = [
+		('error', ctypes.c_char * 128),
 		('fmt', ctypes.c_char * 8),
 		('sample_rate', ctypes.c_ulonglong),
 		('num_channels', ctypes.c_ulonglong),
@@ -29,7 +30,10 @@ class DecodeAudio(ctypes.Structure):
 		self.lib.decode_audio.restype = DecodeAudio
 
 	def __call__(self, input_path):
-		return self.lib.decode_audio(input_path.encode())
+		audio = self.lib.decode_audio(input_path.encode())
+		if audio.error:
+			raise Exception(audio.error.decode())
+		return audio
 
 if __name__ == '__main__':
 	decode_audio = DecodeAudio()
