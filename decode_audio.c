@@ -104,7 +104,8 @@ struct Audio decode_audio(const char* input_path)
 		sample_fmt = av_get_packed_sample_fmt(c->sample_fmt);
 	}
     
-	struct sample_fmt_entry {enum AVSampleFormat sample_fmt; const char *fmt_be, *fmt_le; } sample_fmt_entries[] = {
+	struct sample_fmt_entry {enum AVSampleFormat sample_fmt; const char *fmt_be, *fmt_le;} sample_fmt_entries[] =
+	{
 		{ AV_SAMPLE_FMT_U8,  "u8",    "u8"    },
 		{ AV_SAMPLE_FMT_S16, "s16be", "s16le" },
 		{ AV_SAMPLE_FMT_S32, "s32be", "s32le" },
