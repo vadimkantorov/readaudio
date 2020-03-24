@@ -25,6 +25,9 @@ class DecodeAudio(ctypes.Structure):
 	def byte_order(self):
 		return 'little' if b'le' in self.fmt else 'big' if b'be' in self.fmt else 'native'
 
+	def __bytes__(self):
+		return ctypes.cast(self.data, ctypes.POINTER(ctypes.c_ubyte * self.nbytes)).contents
+	
 	def __init__(self, lib_path = os.path.abspath('decode_audio.so')):
 		self.lib = ctypes.CDLL(lib_path)
 		self.lib.decode_audio.restype = DecodeAudio
@@ -50,8 +53,7 @@ if __name__ == '__main__':
 		import torch
 		dtype2storage = dict(uint8 = torch.CharStorage, int16 = torch.ShortStorage, float32 = torch.FloatStorage)
 		dtype2tensor = dict(uint8 = torch.CharTensor, int16 = torch.ShortTensor, float32 = torch.FloatTensor)
-		array_ctypes = ctypes.cast(audio.data, ctypes.POINTER(ctypes.c_ubyte * audio.nbytes)).contents
-		array = dtype2tensor[audio.dtype](dtype2storage[audio.dtype].from_buffer(array_ctypes, byte_order = audio.byte_order)).reshape(-1, audio.num_channels)
+		array = dtype2tensor[audio.dtype](dtype2storage[audio.dtype].from_buffer(bytes(audio), byte_order = audio.byte_order)).reshape(-1, audio.num_channels)
 
 	print(array.dtype, array.shape)
 	numpy.asarray(array).tofile(sys.argv[2])
