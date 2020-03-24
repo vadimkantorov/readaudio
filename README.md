@@ -39,7 +39,7 @@ diff golden.raw torch.raw
 ```
 
 ```python
-# decode_audio_subprocess.py. read audio using subprocess
+# read audio using subprocess
 # python3 decode_audio_subprocess.py test.wav
 
 import sys
