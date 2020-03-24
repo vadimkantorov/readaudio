@@ -39,8 +39,8 @@ diff golden.raw torch.raw
 ```
 
 ```python
-# read_audio.py. read audio using subprocess
-# python3 read_audio.py test.wav
+# decode_audio_subprocess.py. read audio using subprocess
+# python3 decode_audio_subprocess.py test.wav
 
 import sys
 import subprocess
