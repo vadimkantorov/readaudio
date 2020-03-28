@@ -3,10 +3,17 @@
 #include <stdio.h>
 #include <string.h>
 
-#include <libavutil/frame.h>
-#include <libavutil/mem.h>
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
+#include <libavutil/frame.h>
+#include <libavutil/mem.h>
+
+void __attribute__ ((constructor)) onload()
+{
+	//needed before ffmpeg 4.0, deprecated in ffmpeg 4.0
+	av_register_all();
+	fprintf(stderr, "Ffmpeg initialized\n");
+}
 
 struct Audio
 {
@@ -45,7 +52,6 @@ int decode_packet(AVCodecContext *avctx, AVPacket *pkt, uint8_t** data, int item
 struct Audio decode_audio(const char* input_path)
 {
 	struct Audio audio = {0};
-	av_register_all();
 
 	AVFormatContext *pFormatCtx = NULL;
 	AVPacket* pkt = NULL;
