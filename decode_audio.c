@@ -54,6 +54,7 @@ struct Audio decode_audio(const char* input_path)
 	struct Audio audio = {0};
 
 	AVFormatContext *pFormatCtx = NULL;
+	AVCodecContext* pCodecCtx = NULL;
 	AVPacket* pkt = NULL;
 	
 	if (avformat_open_input(&pFormatCtx, input_path, NULL, NULL) != 0)
@@ -83,31 +84,31 @@ struct Audio decode_audio(const char* input_path)
 		goto end;
 	}
 
-	AVCodecContext *c = avcodec_alloc_context3(codec);
-	if (!c)
+	pCodecCtx = avcodec_alloc_context3(codec);
+	if (!pCodecCtx)
 	{
 		strcpy(audio.error, "Could not allocate audio codec context");
 		goto end;
 	}
 
-	if (avcodec_parameters_to_context(c, stream->codecpar) < 0)
+	if (avcodec_parameters_to_context(pCodecCtx, stream->codecpar) < 0)
 	{
 		strcpy(audio.error, "Failed to copy audio codec parameters to decoder context");
 		goto end;
 	}
 
-	if (avcodec_open2(c, codec, NULL) < 0)
+	if (avcodec_open2(pCodecCtx, codec, NULL) < 0)
 	{
 		strcpy(audio.error, "Could not open codec");
 		goto end;
 	}
 
-	enum AVSampleFormat sample_fmt = c->sample_fmt;
+	enum AVSampleFormat sample_fmt = pCodecCtx->sample_fmt;
 	if (av_sample_fmt_is_planar(sample_fmt))
 	{
 		const char *packed = av_get_sample_fmt_name(sample_fmt);
 		printf("Warning: the sample format the decoder produced is planar (%s). This example will output the first channel only.\n", packed ? packed : "?");
-		sample_fmt = av_get_packed_sample_fmt(c->sample_fmt);
+		sample_fmt = av_get_packed_sample_fmt(pCodecCtx->sample_fmt);
 	}
     
 	struct sample_fmt_entry {enum AVSampleFormat sample_fmt; const char *fmt_be, *fmt_le;} sample_fmt_entries[] =
@@ -137,8 +138,8 @@ struct Audio decode_audio(const char* input_path)
 		goto end;
 	}
 
-	audio.num_channels = c->channels;
-	audio.sample_rate = c->sample_rate;
+	audio.num_channels = pCodecCtx->channels;
+	audio.sample_rate = pCodecCtx->sample_rate;
 	audio.num_samples  = (pFormatCtx->duration / (float) AV_TIME_BASE) * audio.sample_rate;
 	audio.itemsize = av_get_bytes_per_sample(sample_fmt);
 	audio.data = calloc(audio.num_samples * audio.num_channels, audio.itemsize);
@@ -147,18 +148,18 @@ struct Audio decode_audio(const char* input_path)
 	pkt = av_packet_alloc();
 	while (av_read_frame(pFormatCtx, pkt) >= 0)
 	{
-		if (pkt->stream_index == stream_index && decode_packet(c, pkt, &data_ptr, audio.itemsize) < 0)
+		if (pkt->stream_index == stream_index && decode_packet(pCodecCtx, pkt, &data_ptr, audio.itemsize) < 0)
 			break;
 		av_packet_unref(pkt);
 	}
 
 	pkt->data = NULL;
 	pkt->size = 0;
-	decode_packet(c, pkt, &data_ptr, audio.itemsize);
+	decode_packet(pCodecCtx, pkt, &data_ptr, audio.itemsize);
 
 end:
-	if(c)
-		avcodec_free_context(&c);
+	if(pCodecCtx)
+		avcodec_free_context(&pCodecCtx);
 	if(pkt)
 		av_packet_free(&pkt);
 	return audio;
