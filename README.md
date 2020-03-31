@@ -4,6 +4,8 @@ At the bottom is an example of alternative solution using process launching. The
 
 It is also a simple primer on FFmpeg audio decoding loop and basic ctypes usage for interfacing C code and NumPy/PyTorch (without creating a full-blown PyTorch C++ extension).
 
+TODO: support SOX ( https://github.com/pytorch/audio/blob/master/torchaudio/torch_sox.cpp )
+
 ```shell
 # install dependencies: ffmpeg executables and shared libraries on ubuntu
 apt-get install ffmpeg libavcodec-dev libavformat-dev
