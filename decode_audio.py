@@ -51,9 +51,7 @@ if __name__ == '__main__':
 
 	elif 'torch' in sys.argv[2]:
 		import torch
-		dtype2storage = dict(uint8 = torch.CharStorage, int16 = torch.ShortStorage, float32 = torch.FloatStorage)
-		dtype2tensor = dict(uint8 = torch.CharTensor, int16 = torch.ShortTensor, float32 = torch.FloatTensor)
-		array = dtype2tensor[audio.dtype](dtype2storage[audio.dtype].from_buffer(bytes(audio), byte_order = audio.byte_order)).reshape(-1, audio.num_channels)
+		array = torch.tensor((), dtype = getattr(torch, audio.dtype)).set_(dict(torch.uint8 = torch.ByteStorage, int16 = torch.ShortStorage, float32 = torch.FloatStorage)[audio.dtype].from_buffer(bytes(audio), byte_order = audio.byte_order)).reshape(-1, audio.num_channels)
 
 	print(array.dtype, array.shape)
 	numpy.asarray(array).tofile(sys.argv[2])
