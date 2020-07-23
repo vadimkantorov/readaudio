@@ -8,6 +8,52 @@
 #include <libavutil/frame.h>
 #include <libavutil/mem.h>
 
+/* BEGIN https://github.com/dmlc/dlpack/blob/master/include/dlpack/dlpack.h */
+
+#include <stdint.h>
+#include <stddef.h>
+
+typedef enum {
+  kDLCPU = 1,
+} DLDeviceType;
+
+typedef struct {
+  DLDeviceType device_type;
+  int device_id;
+} DLContext;
+
+typedef enum {
+  kDLInt = 0U,
+  kDLUInt = 1U,
+  kDLFloat = 2U,
+  kDLBfloat = 4U,
+} DLDataTypeCode;
+
+typedef struct {
+  uint8_t code;
+  uint8_t bits;
+  uint16_t lanes;
+} DLDataType;
+
+typedef struct {
+  void* data;
+  DLContext ctx;
+  int ndim;
+  DLDataType dtype;
+  int64_t* shape;
+  int64_t* strides;
+  uint64_t byte_offset;
+} DLTensor;
+
+typedef struct DLManagedTensor {
+  DLTensor dl_tensor;
+  void * manager_ctx;
+  void (*deleter)(struct DLManagedTensor * self);
+} DLManagedTensor;
+
+/* END https://github.com/dmlc/dlpack/blob/master/include/dlpack/dlpack.h */
+
+
 void __attribute__ ((constructor)) onload()
 {
 	//needed before ffmpeg 4.0, deprecated in ffmpeg 4.0
