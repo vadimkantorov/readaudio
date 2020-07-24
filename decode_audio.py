@@ -28,7 +28,7 @@ class DecodeAudio(ctypes.Structure):
 	def __bytes__(self):
 		return ctypes.cast(self.data, ctypes.POINTER(ctypes.c_ubyte * self.nbytes)).contents
 	
-	def __init__(self, lib_path = os.path.abspath('decode_audio.so')):
+	def __init__(self, lib_path = os.path.abspath('decode_audio_ffmpeg.so')):
 		self.lib = ctypes.CDLL(lib_path)
 		self.lib.decode_audio.restype = DecodeAudio
 
