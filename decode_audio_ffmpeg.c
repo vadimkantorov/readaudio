@@ -25,8 +25,7 @@ typedef struct {
 typedef enum {
   kDLInt = 0U,
   kDLUInt = 1U,
-  kDLFloat = 2U,
-  kDLBfloat = 4U,
+  kDLFloat = 2U
 } DLDataTypeCode;
 
 typedef struct {
