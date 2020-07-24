@@ -33,7 +33,7 @@ gcc -o decode_audio decode_audio.c -lavformat -lavcodec -lavutil
 diff golden.raw bin.raw
 
 # compile a shared library for interfacing with NumPy
-gcc -o decode_audio.so -shared -fPIC decode_audio.c -lavformat -lavcodec -lavutil
+gcc -o decode_audio_ffmpeg.so -shared -fPIC decode_audio_ffmpeg.c -lavformat -lavcodec -lavutil
 
 # convert audio to raw format (NumPy) and compare to golden
 python3 decode_audio.py test.wav numpy.raw
