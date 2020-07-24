@@ -72,6 +72,12 @@ struct Audio
 	uint8_t* data;
 };
 
+void destruct_audio(Audio* self)
+{
+	if(self.data)
+		free(self.data);
+}
+
 int decode_packet(AVCodecContext *avctx, AVPacket *pkt, uint8_t** data, int itemsize)
 {
 	AVFrame *frame = av_frame_alloc();
