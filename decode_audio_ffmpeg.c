@@ -15,6 +15,14 @@
 
 typedef enum {
   kDLCPU = 1,
+  kDLGPU = 2,
+  kDLCPUPinned = 3,
+  kDLOpenCL = 4,
+  kDLVulkan = 7,
+  kDLMetal = 8,
+  kDLVPI = 9,
+  kDLROCM = 10,
+  kDLExtDev = 12,
 } DLDeviceType;
 
 typedef struct {
@@ -52,6 +60,17 @@ typedef struct DLManagedTensor {
 
 /* END https://github.com/dmlc/dlpack/blob/master/include/dlpack/dlpack.h */
 
+void deleter(struct DLManagedTensor* self)
+{
+	if(self->dl_tensor.data)
+		free(self->dl_tensor.data);
+
+	if(self->dl_tensor.shape)
+		free(self->dl_tensor.shape);
+	
+	if(self->dl_tensor.strides)
+		free(self->dl_tensor.strides);
+}
 
 void __attribute__ ((constructor)) onload()
 {
@@ -60,22 +79,14 @@ void __attribute__ ((constructor)) onload()
 	fprintf(stderr, "Ffmpeg initialized\n");
 }
 
-struct Audio
+struct DecodeAudio
 {
 	char error[128];
 	char fmt[8];
 	uint64_t sample_rate;
-	uint64_t num_channels;
-	uint64_t num_samples;
-	uint64_t itemsize;
-	uint8_t* data;
-};
 
-void destruct_audio(struct Audio* self)
-{
-	if(self->data)
-		free(self->data);
-}
+	DLManagedTensor dl_managed_tensor;
+};
 
 int decode_packet(AVCodecContext *avctx, AVPacket *pkt, uint8_t** data, int itemsize)
 {
@@ -87,6 +98,8 @@ int decode_packet(AVCodecContext *avctx, AVPacket *pkt, uint8_t** data, int item
 		ret = avcodec_receive_frame(avctx, frame);
 		if (ret == 0)
 		{
+			//data = memcpy(*data, frame->data) + itemsize * frame->nb_samples * avctx->channels;
+			
 			for (int i = 0; i < frame->nb_samples; i++)
 				for (int ch = 0; ch < avctx->channels; ch++)
 					*data = memcpy(*data, frame->data[ch] + itemsize * i, itemsize) + itemsize;
@@ -100,9 +113,9 @@ int decode_packet(AVCodecContext *avctx, AVPacket *pkt, uint8_t** data, int item
 	return ret;
 }
 
-struct Audio decode_audio(const char* input_path)
+struct DecodeAudio decode_audio(const char* input_path)
 {
-	struct Audio audio = {0};
+	struct DecodeAudio audio = {0};
 
 	AVFormatContext *pFormatCtx = NULL;
 	AVCodecContext* pCodecCtx = NULL;
@@ -162,7 +175,7 @@ struct Audio decode_audio(const char* input_path)
 		sample_fmt = av_get_packed_sample_fmt(pCodecCtx->sample_fmt);
 	}
     
-	struct sample_fmt_entry {enum AVSampleFormat sample_fmt; const char *fmt_be, *fmt_le;} sample_fmt_entries[] =
+	static struct sample_fmt_entry {enum AVSampleFormat sample_fmt; const char *fmt_be, *fmt_le;} sample_fmt_entries[] =
 	{
 		{ AV_SAMPLE_FMT_U8,  "u8",    "u8"    },
 		{ AV_SAMPLE_FMT_S16, "s16be", "s16le" },
@@ -189,24 +202,37 @@ struct Audio decode_audio(const char* input_path)
 		goto end;
 	}
 
-	audio.num_channels = pCodecCtx->channels;
 	audio.sample_rate = pCodecCtx->sample_rate;
-	audio.num_samples  = (pFormatCtx->duration / (float) AV_TIME_BASE) * audio.sample_rate;
-	audio.itemsize = av_get_bytes_per_sample(sample_fmt);
-	audio.data = calloc(audio.num_samples * audio.num_channels, audio.itemsize);
-
-	uint8_t* data_ptr = audio.data;
+	
+	audio.dl_managed_tensor.deleter = deleter;
+	audio.dl_managed_tensor.dl_tensor.ctx.device_type = kDLCPU;
+	audio.dl_managed_tensor.dl_tensor.ndim = 2;
+	audio.dl_managed_tensor.dl_tensor.dtype.code = kDLInt; // DETERMINE FROM fmt
+	audio.dl_managed_tensor.dl_tensor.dtype.lanes = 1;
+	audio.dl_managed_tensor.dl_tensor.dtype.bits = av_get_bytes_per_sample(sample_fmt) * 8;
+	audio.dl_managed_tensor.dl_tensor.shape = malloc(audio.dl_managed_tensor.dl_tensor.ndim * sizeof(int64_t));
+	audio.dl_managed_tensor.dl_tensor.shape[0] = (pFormatCtx->duration / (float) AV_TIME_BASE) * audio.sample_rate;
+	audio.dl_managed_tensor.dl_tensor.shape[1] = pCodecCtx->channels;
+	audio.dl_managed_tensor.dl_tensor.strides = malloc(audio.dl_managed_tensor.dl_tensor.ndim * sizeof(int64_t));
+	audio.dl_managed_tensor.dl_tensor.strides[0] = audio.dl_managed_tensor.dl_tensor.shape[1];
+	audio.dl_managed_tensor.dl_tensor.strides[1] = 1;
+	
+	size_t num_samples = audio.dl_managed_tensor.dl_tensor.shape[0], num_channels = audio.dl_managed_tensor.dl_tensor.shape[1];
+	size_t itemsize = audio.dl_managed_tensor.dl_tensor.dtype.lanes * audio.dl_managed_tensor.dl_tensor.dtype.bits / 8;
+	
+	audio.dl_managed_tensor.dl_tensor.data = calloc(num_samples * num_channels, itemsize);
+	uint8_t* data_ptr = audio.dl_managed_tensor.dl_tensor.data;
 	pkt = av_packet_alloc();
 	while (av_read_frame(pFormatCtx, pkt) >= 0)
 	{
-		if (pkt->stream_index == stream_index && decode_packet(pCodecCtx, pkt, &data_ptr, audio.itemsize) < 0)
+		if (pkt->stream_index == stream_index && decode_packet(pCodecCtx, pkt, &data_ptr, itemsize) < 0)
 			break;
 		av_packet_unref(pkt);
 	}
 
 	pkt->data = NULL;
 	pkt->size = 0;
-	decode_packet(pCodecCtx, pkt, &data_ptr, audio.itemsize);
+	decode_packet(pCodecCtx, pkt, &data_ptr, itemsize);
 
 end:
 	if(pCodecCtx)
@@ -224,11 +250,14 @@ int main(int argc, char **argv)
 		return 1;
 	}
 	
-	struct Audio audio = decode_audio(argv[1]);
+	struct DecodeAudio audio = decode_audio(argv[1]);
+	size_t num_samples = audio.dl_managed_tensor.dl_tensor.shape[0], num_channels = audio.dl_managed_tensor.dl_tensor.shape[1];
+	size_t itemsize = audio.dl_managed_tensor.dl_tensor.dtype.lanes * audio.dl_managed_tensor.dl_tensor.dtype.bits / 8;
     
-	printf("ffplay -f %s -ac %d -ar %d -i %s # num samples: %d\n", audio.fmt, (int)audio.num_channels, (int)audio.sample_rate, argv[1], (int)audio.num_samples);
+	printf("ffplay -f %s -ac %d -ar %d -i %s # num samples: %d\n", audio.fmt, (int)num_channels, (int)audio.sample_rate, argv[1], (int)num_samples);
 	FILE *out = fopen(argv[2], "wb");
-	fwrite(audio.data, audio.itemsize, audio.num_samples * audio.num_channels, out);
+	
+	fwrite(audio.dl_managed_tensor.dl_tensor.data, itemsize, num_samples * num_channels, out);
 	fclose(out);
 	return 0;
 }

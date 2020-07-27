@@ -26,14 +26,14 @@ ffmpeg -i test.wav -f s16le -acodec pcm_s16le golden.raw
 ffplay -f s16le -ac 1 -ar 8000 golden.raw
 
 # compile executable for testing
-gcc -o decode_audio_ffmpeg decode_audio_ffmpeg.c -lavformat -lavcodec -lavutil
+make decode_audio_ffmpeg
 
 # convert audio to raw format and compare to golden
 ./decode_audio_ffmpeg test.wav bin.raw
 diff golden.raw bin.raw
 
 # compile a shared library for interfacing with NumPy
-gcc -o decode_audio_ffmpeg.so -shared -fPIC decode_audio_ffmpeg.c -lavformat -lavcodec -lavutil
+make decode_audio_ffmpeg.so
 
 # convert audio to raw format (NumPy) and compare to golden
 python3 decode_audio.py test.wav numpy.raw
