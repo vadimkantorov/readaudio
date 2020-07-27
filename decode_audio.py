@@ -73,13 +73,18 @@ class DLManagedTensor(ctypes.Structure):
 		('deleter', ctypes.CFUNCTYPE(None, ctypes.c_void_p))
 	]
 
+PyCapsule_Destructor = ctypes.CFUNCTYPE(None, ctypes.py_object)
 PyCapsule_New = ctypes.pythonapi.PyCapsule_New
 PyCapsule_New.restype = ctypes.py_object
-PyCapsule_New.argtypes = (ctypes.c_void_p, ctypes.c_char_p, ctypes.c_void_p)
-
+PyCapsule_New.argtypes = (ctypes.c_void_p, ctypes.c_char_p, ctypes.c_void_p)#PyCapsule_Destructor)
 PyCapsule_GetPointer = ctypes.pythonapi.PyCapsule_GetPointer
 PyCapsule_GetPointer.restype = ctypes.c_void_p
 PyCapsule_GetPointer.argtypes = (ctypes.py_object, ctypes.c_char_p)
+
+#@PyCapsule_Destructor
+#def dlpack_pycapsule_deleter(pycapsule):
+#	data = ctypes.cast(PyCapsule_GetPointer(pycapsule, b'dltensor'), ctypes.POINTER(DLManagedTensor)).contents
+#	data.deleter(ctypes.byref(data))
 
 class DecodeAudio(ctypes.Structure):
 	_fields_ = [
@@ -125,14 +130,20 @@ class DecodeAudio(ctypes.Structure):
 		#TODO: https://stackoverflow.com/questions/37988849/safer-way-to-expose-a-c-allocated-memory-buffer-using-numpy-ctypes
 		self.data.deleter(ctypes.byref(self.data))
 
-def numpy_from_dlpack(pycapsule):
-	dl_managed_tensor = ctypes.cast(PyCapsule_GetPointer(pycapsule, b'dltensor'), ctypes.POINTER(DLManagedTensor)).contents
-	shape = [dl_managed_tensor.dl_tensor.shape[dim] for dim in range(dl_managed_tensor.dl_tensor.ndim)]
-	#buffer = bytes(memoryview(ctypes.cast(dl_managed_tensor.dl_tensor.data, ctypes.POINTER(ctypes.c_ubyte * dl_managed_tensor.dl_tensor.nbytes)).contents))
-	#return numpy.frombuffer(buffer, dtype = dl_managed_tensor.dl_tensor.dtype.descr).reshape(shape)
+class numpy_from_dlpack:
+	def __init__(self, pycapsule):
+		self.pycapsule = pycapsule
+		self.data = ctypes.cast(PyCapsule_GetPointer(pycapsule, b'dltensor'), ctypes.POINTER(DLManagedTensor)).contents
 
-	pointer = ctypes.cast(dl_managed_tensor.dl_tensor.data, ctypes.POINTER(ctypes.c_ubyte * dl_managed_tensor.dl_tensor.itemsize))
-	return numpy.ctypeslib.as_array(pointer, shape = shape).view(dl_managed_tensor.dl_tensor.dtype.descr)
+	def __array__(self):
+		# only contig for now
+		dl_tensor = self.data.dl_tensor
+		shape = [dl_tensor.shape[dim] for dim in range(dl_tensor.ndim)]
+		pointer = ctypes.cast(dl_tensor.data, ctypes.POINTER(ctypes.c_ubyte * dl_tensor.itemsize))
+		return numpy.ctypeslib.as_array(pointer, shape = shape).view(dl_tensor.dtype.descr)
+
+	def __del__(self):
+		self.data.deleter(ctypes.byref(self.data))
 
 if __name__ == '__main__':
 	import numpy
@@ -153,8 +164,9 @@ if __name__ == '__main__':
 		array = numpy_from_dlpack(dlpack_tensor)
 	elif 'torch' in sys.argv[2]:
 		array = torch.utils.dlpack.from_dlpack(dlpack_tensor)
-
-	print(array.dtype, array.shape)
-	numpy.asarray(array).tofile(sys.argv[2])
 	
-	print('ffplay', '-f', audio.fmt, '-ac', audio.num_channels, '-ar', audio.sample_rate, '-i', sys.argv[2], '# num samples:', audio.num_samples)
+	del array
+
+	#print(array.dtype, array.shape)
+	#numpy.asarray(array).tofile(sys.argv[2])
+	#print('ffplay', '-f', audio.fmt, '-ac', audio.num_channels, '-ar', audio.sample_rate, '-i', sys.argv[2], '# num samples:', audio.num_samples)
