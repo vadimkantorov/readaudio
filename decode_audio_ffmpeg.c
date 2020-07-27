@@ -71,10 +71,10 @@ struct Audio
 	uint8_t* data;
 };
 
-void destruct_audio(Audio* self)
+void destruct_audio(struct Audio* self)
 {
-	if(self.data)
-		free(self.data);
+	if(self->data)
+		free(self->data);
 }
 
 int decode_packet(AVCodecContext *avctx, AVPacket *pkt, uint8_t** data, int itemsize)
