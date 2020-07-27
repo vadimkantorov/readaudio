@@ -33,7 +33,8 @@ typedef struct {
 typedef enum {
   kDLInt = 0U,
   kDLUInt = 1U,
-  kDLFloat = 2U
+  kDLFloat = 2U,
+  kDLBfloat = 4U,
 } DLDataTypeCode;
 
 typedef struct {
@@ -62,14 +63,26 @@ typedef struct DLManagedTensor {
 
 void deleter(struct DLManagedTensor* self)
 {
+	fprintf(stderr, "Deleter calling\n");
 	if(self->dl_tensor.data)
+	{
 		free(self->dl_tensor.data);
+		self->dl_tensor.data = NULL;
+	}
 
 	if(self->dl_tensor.shape)
+	{
 		free(self->dl_tensor.shape);
+		self->dl_tensor.shape = NULL;
+	}
 	
 	if(self->dl_tensor.strides)
+	{
 		free(self->dl_tensor.strides);
+		self->dl_tensor.strides = NULL;
+	}
+
+	fprintf(stderr, "Deleter called\n");
 }
 
 void __attribute__ ((constructor)) onload()
@@ -84,8 +97,10 @@ struct DecodeAudio
 	char error[128];
 	char fmt[8];
 	uint64_t sample_rate;
-
-	DLManagedTensor dl_managed_tensor;
+	uint64_t num_channels;
+	uint64_t num_samples;
+	uint64_t itemsize;
+	DLManagedTensor data;
 };
 
 int decode_packet(AVCodecContext *avctx, AVPacket *pkt, uint8_t** data, int itemsize)
@@ -175,22 +190,24 @@ struct DecodeAudio decode_audio(const char* input_path)
 		sample_fmt = av_get_packed_sample_fmt(pCodecCtx->sample_fmt);
 	}
     
-	static struct sample_fmt_entry {enum AVSampleFormat sample_fmt; const char *fmt_be, *fmt_le;} sample_fmt_entries[] =
+	static struct sample_fmt_entry {enum AVSampleFormat sample_fmt; const char *fmt_be, *fmt_le; DLDataType dtype;} sample_fmt_entries[] =
 	{
-		{ AV_SAMPLE_FMT_U8,  "u8",    "u8"    },
-		{ AV_SAMPLE_FMT_S16, "s16be", "s16le" },
-		{ AV_SAMPLE_FMT_S32, "s32be", "s32le" },
-		{ AV_SAMPLE_FMT_FLT, "f32be", "f32le" },
-		{ AV_SAMPLE_FMT_DBL, "f64be", "f64le" },
+		{ AV_SAMPLE_FMT_U8,  "u8"   ,    "u8" , { kDLUInt  , 8 , 1 }},
+		{ AV_SAMPLE_FMT_S16, "s16be", "s16le" , { kDLInt   , 16, 1 }},
+		{ AV_SAMPLE_FMT_S32, "s32be", "s32le" , { kDLInt   , 32, 1 }},
+		{ AV_SAMPLE_FMT_FLT, "f32be", "f32le" , { kDLFloat , 32, 1 }},
+		{ AV_SAMPLE_FMT_DBL, "f64be", "f64le" , { kDLFloat , 64, 1 }},
 	};
 
 	int i;
+	DLDataType dtype;
 	for (i = 0; i < FF_ARRAY_ELEMS(sample_fmt_entries); i++)
 	{
 		struct sample_fmt_entry *entry = &sample_fmt_entries[i];
 		if (sample_fmt == entry->sample_fmt)
 		{
-            		strcpy(audio.fmt, AV_NE(entry->fmt_be, entry->fmt_le));
+            strcpy(audio.fmt, AV_NE(entry->fmt_be, entry->fmt_le));
+			dtype = entry->dtype;
 			i = -1;
 			break;
 		}
@@ -203,36 +220,33 @@ struct DecodeAudio decode_audio(const char* input_path)
 	}
 
 	audio.sample_rate = pCodecCtx->sample_rate;
+	audio.num_channels = pCodecCtx->channels;
+	audio.num_samples  = (pFormatCtx->duration / (float) AV_TIME_BASE) * audio.sample_rate;
+	audio.data.deleter = deleter;
+	audio.data.dl_tensor.ctx.device_type = kDLCPU;
+	audio.data.dl_tensor.ndim = 2;
+	audio.data.dl_tensor.dtype = dtype; 
+	audio.data.dl_tensor.shape = malloc(audio.data.dl_tensor.ndim * sizeof(int64_t));
+	audio.data.dl_tensor.shape[0] = audio.num_samples;
+	audio.data.dl_tensor.shape[1] = audio.num_channels;
+	audio.data.dl_tensor.strides = malloc(audio.data.dl_tensor.ndim * sizeof(int64_t));
+	audio.data.dl_tensor.strides[0] = audio.num_channels;
+	audio.data.dl_tensor.strides[1] = 1;
+	audio.itemsize = audio.data.dl_tensor.dtype.lanes * audio.data.dl_tensor.dtype.bits / 8;
+	audio.data.dl_tensor.data = calloc(audio.num_samples * audio.num_channels, audio.itemsize);
 	
-	audio.dl_managed_tensor.deleter = deleter;
-	audio.dl_managed_tensor.dl_tensor.ctx.device_type = kDLCPU;
-	audio.dl_managed_tensor.dl_tensor.ndim = 2;
-	audio.dl_managed_tensor.dl_tensor.dtype.code = kDLInt; // DETERMINE FROM fmt
-	audio.dl_managed_tensor.dl_tensor.dtype.lanes = 1;
-	audio.dl_managed_tensor.dl_tensor.dtype.bits = av_get_bytes_per_sample(sample_fmt) * 8;
-	audio.dl_managed_tensor.dl_tensor.shape = malloc(audio.dl_managed_tensor.dl_tensor.ndim * sizeof(int64_t));
-	audio.dl_managed_tensor.dl_tensor.shape[0] = (pFormatCtx->duration / (float) AV_TIME_BASE) * audio.sample_rate;
-	audio.dl_managed_tensor.dl_tensor.shape[1] = pCodecCtx->channels;
-	audio.dl_managed_tensor.dl_tensor.strides = malloc(audio.dl_managed_tensor.dl_tensor.ndim * sizeof(int64_t));
-	audio.dl_managed_tensor.dl_tensor.strides[0] = audio.dl_managed_tensor.dl_tensor.shape[1];
-	audio.dl_managed_tensor.dl_tensor.strides[1] = 1;
-	
-	size_t num_samples = audio.dl_managed_tensor.dl_tensor.shape[0], num_channels = audio.dl_managed_tensor.dl_tensor.shape[1];
-	size_t itemsize = audio.dl_managed_tensor.dl_tensor.dtype.lanes * audio.dl_managed_tensor.dl_tensor.dtype.bits / 8;
-	
-	audio.dl_managed_tensor.dl_tensor.data = calloc(num_samples * num_channels, itemsize);
-	uint8_t* data_ptr = audio.dl_managed_tensor.dl_tensor.data;
+	uint8_t* data_ptr = audio.data.dl_tensor.data;
 	pkt = av_packet_alloc();
 	while (av_read_frame(pFormatCtx, pkt) >= 0)
 	{
-		if (pkt->stream_index == stream_index && decode_packet(pCodecCtx, pkt, &data_ptr, itemsize) < 0)
+		if (pkt->stream_index == stream_index && decode_packet(pCodecCtx, pkt, &data_ptr, audio.itemsize) < 0)
 			break;
 		av_packet_unref(pkt);
 	}
 
 	pkt->data = NULL;
 	pkt->size = 0;
-	decode_packet(pCodecCtx, pkt, &data_ptr, itemsize);
+	decode_packet(pCodecCtx, pkt, &data_ptr, audio.itemsize);
 
 end:
 	if(pCodecCtx)
@@ -251,13 +265,11 @@ int main(int argc, char **argv)
 	}
 	
 	struct DecodeAudio audio = decode_audio(argv[1]);
-	size_t num_samples = audio.dl_managed_tensor.dl_tensor.shape[0], num_channels = audio.dl_managed_tensor.dl_tensor.shape[1];
-	size_t itemsize = audio.dl_managed_tensor.dl_tensor.dtype.lanes * audio.dl_managed_tensor.dl_tensor.dtype.bits / 8;
-    
-	printf("ffplay -f %s -ac %d -ar %d -i %s # num samples: %d\n", audio.fmt, (int)num_channels, (int)audio.sample_rate, argv[1], (int)num_samples);
+	
+	printf("ffplay -f %s -ac %d -ar %d -i %s # num samples: %d\n", audio.fmt, (int)audio.num_channels, (int)audio.sample_rate, argv[1], (int)audio.num_samples);
 	FILE *out = fopen(argv[2], "wb");
 	
-	fwrite(audio.dl_managed_tensor.dl_tensor.data, itemsize, num_samples * num_channels, out);
+	fwrite(audio.data.dl_tensor.data, audio.itemsize, audio.num_samples * audio.num_channels, out);
 	fclose(out);
 	return 0;
 }

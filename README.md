@@ -1,7 +1,5 @@
 This repo is a primer in reading audio (via ffmpeg) into NumPy/PyTorch arrays without copying data or process launching. Interfacing with FFmpeg is done in pure C code in [decode_audio.c](./decode_audio.c). Python wrapper is implemented in [decode_audio.py](./decode_audio.py) using a standard library module ctypes. C code returns a plain C structure [Audio](./decode_audio.c#L12-L20). This structure is then interpeted and wrapped by NumPy or PyTorch without copy. 
 
-**TODO IMPORTANT**: figure out struct deallocation (C and Python)
-
 **TODO**: support SOX ( https://github.com/pytorch/audio/blob/master/torchaudio/torch_sox.cpp )
 
 **TODO**: reuse https://github.com/dmlc/dlpack/blob/master/include/dlpack/dlpack.h along with deleter
@@ -32,7 +30,7 @@ make decode_audio_ffmpeg
 ./decode_audio_ffmpeg test.wav bin.raw
 diff golden.raw bin.raw
 
-# compile a shared library for interfacing with NumPy
+# compile a shared library for interfacing with NumPy and PyTorch
 make decode_audio_ffmpeg.so
 
 # convert audio to raw format (NumPy) and compare to golden
@@ -42,6 +40,10 @@ diff golden.raw numpy.raw
 # convert audio to raw format (PyTorch) and compare to golden
 python3 decode_audio.py test.wav torch.raw
 diff golden.raw torch.raw
+
+# convert audio to raw format (PyTorch / DLPack) and compare to golden
+python3 decode_audio.py test.wav dlpack.raw
+diff golden.raw dlpack.raw
 ```
 
 ```python
