@@ -2,10 +2,6 @@
 
 This repo is a primer in reading audio (via ffmpeg) into NumPy/PyTorch arrays without copying data or process launching. Interfacing with FFmpeg is done in pure C code in [decode_audio.c](./decode_audio.c). Python wrapper is implemented in [decode_audio.py](./decode_audio.py) using a standard library module ctypes. C code returns a plain C structure [Audio](./decode_audio.c#L12-L20). This structure is then interpeted and wrapped by NumPy or PyTorch without copy. 
 
-**TODO**: support SOX ( https://github.com/pytorch/audio/blob/master/torchaudio/torch_sox.cpp )
-
-**TODO**: reuse https://github.com/dmlc/dlpack/blob/master/include/dlpack/dlpack.h along with deleter
-
 At the bottom is an example of alternative solution using process launching. The first solution is preferable if you must load huge amounts of audio in various formats (for reading `*.wav` files, there exists a standard Python [`wave`](https://docs.python.org/3/library/wave.html) module and [`scipy.io.wavfile.read`](https://docs.scipy.org/doc/scipy/reference/generated/scipy.io.wavfile.read.html)).
 
 It is also a simple primer on FFmpeg audio decoding loop and basic ctypes usage for interfacing C code and NumPy/PyTorch (without creating a full-blown PyTorch C++ extension).
@@ -66,3 +62,10 @@ audio = audio.cast(format_struct, shape = [len(audio) // num_channels // struct.
 print('shape', audio.shape, 'itemsize', audio.itemsize, 'format', audio.format)
 # shape (40000, 1) itemsize 2 format h
 ```
+
+### TODO
+- SOX backend ( https://github.com/pytorch/audio/blob/master/torchaudio/torch_sox.cpp)
+- ffmpeg audio filter graph
+- decode from a buffer
+- non-allocating version that keeps allocations in Python for simpler memory management
+- probe function
