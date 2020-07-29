@@ -1,3 +1,5 @@
+# Work In Progress
+
 This repo is a primer in reading audio (via ffmpeg) into NumPy/PyTorch arrays without copying data or process launching. Interfacing with FFmpeg is done in pure C code in [decode_audio.c](./decode_audio.c). Python wrapper is implemented in [decode_audio.py](./decode_audio.py) using a standard library module ctypes. C code returns a plain C structure [Audio](./decode_audio.c#L12-L20). This structure is then interpeted and wrapped by NumPy or PyTorch without copy. 
 
 **TODO**: support SOX ( https://github.com/pytorch/audio/blob/master/torchaudio/torch_sox.cpp )
