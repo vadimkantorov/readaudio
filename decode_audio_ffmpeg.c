@@ -217,9 +217,6 @@ int main(int argc, char **argv)
 	struct DecodeAudio audio = decode_audio(argv[1]);
 	
 	printf("ffplay -f %s -ac %d -ar %d -i %s # num samples: %d\n", audio.fmt, (int)audio.num_channels, (int)audio.sample_rate, argv[1], (int)audio.num_samples);
-	FILE *out = fopen(argv[2], "wb");
-	
-	fwrite(audio.data.dl_tensor.data, audio.itemsize, audio.num_samples * audio.num_channels, out);
-	fclose(out);
+	fwrite(audio.data.dl_tensor.data, audio.itemsize, audio.num_samples * audio.num_channels, fopen(argv[2], "wb"));
 	return 0;
 }
