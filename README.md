@@ -8,7 +8,7 @@ It is also a simple primer on FFmpeg audio decoding loop and basic ctypes usage 
 
 ```shell
 # install dependencies: ffmpeg executables and shared libraries on ubuntu
-apt-get install ffmpeg libavcodec-dev libavformat-dev
+apt-get install -y ffmpeg libavcodec-dev libavformat-dev libavfilter-dev
 ```
 
 ```shell
@@ -32,15 +32,15 @@ diff golden.raw bin.raw
 make decode_audio_ffmpeg.so
 
 # convert audio to raw format (NumPy) and compare to golden
-python3 decode_audio.py test.wav numpy.raw
+python3 decode_audio.py -i test.wav -o numpy.raw
 diff golden.raw numpy.raw
 
 # convert audio to raw format (PyTorch) and compare to golden
-python3 decode_audio.py test.wav torch.raw
+python3 decode_audio.py -i test.wav -o torch.raw
 diff golden.raw torch.raw
 
 # convert audio to raw format (PyTorch / DLPack) and compare to golden
-python3 decode_audio.py test.wav dlpack.raw
+python3 decode_audio.py -i test.wav -o dlpack.raw
 diff golden.raw dlpack.raw
 ```
 

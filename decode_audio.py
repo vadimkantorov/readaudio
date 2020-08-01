@@ -1,3 +1,8 @@
+# support output fmt / sample_rate for filtering mode
+# support output fmt / sample_rate (make aresample)
+# move probe fall-out earlier
+# support raw data input 
+
 import os
 import sys
 import ctypes
@@ -34,6 +39,9 @@ class DLDataType(ctypes.Structure):
 		typestr = str(self.type_code) + str(self.bits)
 		return [('f' + str(l), typestr) for l in range(self.lanes)]
 
+	def __str__(self):
+		return repr(self.descr)
+
 class DLContext(ctypes.Structure):
 	_fields_ = [
 		('device_type', DLDeviceType),
@@ -66,6 +74,16 @@ class DLTensor(ctypes.Structure):
 	def nbytes(self):
 		return self.size * self.itemsize 
 
+	@property
+	def __array_interface__(self):
+		shape = tuple(self.shape[dim] for dim in range(self.ndim))
+		strides = tuple(self.strides[dim] * self.itemsize for dim in range(self.ndim))
+		typestr = '|' + str(self.dtype.type_code)[0] + str(self.itemsize)
+		return dict(version = 3, shape = shape, strides = strides, data = (self.data, True), offset = self.byte_offset, typestr = typestr)
+
+	def __str__(self):
+		return 'dtype={dtype}, ndim={ndim}, shape={shape}, strides={strides}, byte_offset={byte_offset}'.format(dtype = self.dtype, ndim = self.ndim, shape = tuple(self.shape[i] for i in range(self.ndim)), strides = tuple(self.strides[i] for i in range(self.ndim)), byte_offset = self.byte_offset)
+
 class DLManagedTensor(ctypes.Structure):
 	_fields_ = [
 		('dl_tensor', DLTensor),
@@ -80,11 +98,6 @@ PyCapsule_New.argtypes = (ctypes.c_void_p, ctypes.c_char_p, ctypes.c_void_p)#PyC
 PyCapsule_GetPointer = ctypes.pythonapi.PyCapsule_GetPointer
 PyCapsule_GetPointer.restype = ctypes.c_void_p
 PyCapsule_GetPointer.argtypes = (ctypes.py_object, ctypes.c_char_p)
-
-#@PyCapsule_Destructor
-#def dlpack_pycapsule_deleter(pycapsule):
-#	data = ctypes.cast(PyCapsule_GetPointer(pycapsule, b'dltensor'), ctypes.POINTER(DLManagedTensor)).contents
-#	data.deleter(ctypes.byref(data))
 
 class DecodeAudio(ctypes.Structure):
 	_fields_ = [
@@ -102,71 +115,101 @@ class DecodeAudio(ctypes.Structure):
 		return 'int16' if b's16' in self.fmt else 'float32' if b'f32' in self.fmt else 'uint8'
 
 	@property
-	def nbytes(self):
-		return self.num_channels * self.num_samples * self.itemsize
-
-	@property
 	def byte_order(self):
 		return 'little' if b'le' in self.fmt else 'big' if b'be' in self.fmt else 'native'
 	
 	def __init__(self, lib_path = os.path.abspath('decode_audio_ffmpeg.so')):
 		self.lib = ctypes.CDLL(lib_path)
+		self.lib.decode_audio.argtypes = [ctypes.c_char_p, ctypes.c_int, DecodeAudio, DecodeAudio, ctypes.c_char_p]
 		self.lib.decode_audio.restype = DecodeAudio	
 
-	def __call__(self, input_path):
-		audio = self.lib.decode_audio(input_path.encode())
+	def __call__(self, input_path = None, probe = False, input_buffer = None, output_buffer = None, filter_string = ''):
+		input_hint = DecodeAudio()
+		output_hint = DecodeAudio()
+
+		input_buffer_len = ctypes.c_int64(len(input_buffer) if input_buffer is not None else 0)
+		if input_buffer is not None:
+			#input_hint.data.dl_tensor.data = ctypes.cast((ctypes.c_char * len(input_buffer)).from_buffer(input_buffer), ctypes.c_void_p) 
+			
+			#input_hint.data.dl_tensor.data = ctypes.cast(ctypes.addressof(ctypes.cast(input_buffer, ctypes.POINTER(ctypes.c_char)).contents), ctypes.c_void_p)
+			#input_hint.data.dl_tensor.data = ctypes.cast(input_buffer, ctypes.c_void_p)
+			#input_hint.data.dl_tensor.data = input_buffer.ctypes.data_as(ctypes.c_void_p)
+			input_hint.data.dl_tensor.data = ctypes.c_void_p(input_buffer.__array_interface__['data'][0])
+			
+			input_hint.data.dl_tensor.shape = ctypes.cast(ctypes.addressof(input_buffer_len), ctypes.POINTER(ctypes.c_int64))
+			input_hint.data.dl_tensor.ndim = 1
+			input_hint.data.dl_tensor.dtype.lanes = 1
+			input_hint.data.dl_tensor.dtype.bits = 8
+			input_hint.data.dl_tensor.dtype.code = DLDataTypeCode.kDLUInt
+
+		output_buffer_len = ctypes.c_int64(len(output_buffer) if output_buffer is not None else 0)
+		if output_buffer is not None:
+			output_hint.data.dl_tensor.data = ctypes.cast((ctypes.c_char * len(input_buffer)).from_buffer(memoryview(output_buffer)), ctypes.c_void_p) 
+			output_hint.data.dl_tensor.shape = ctypes.cast(ctypes.addressof(output_buffer_len), ctypes.POINTER(ctypes.c_int64))
+			output_hint.data.dl_tensor.ndim = 1
+			output_hint.data.dl_tensor.dtype.lanes = 1
+			output_hint.data.dl_tensor.dtype.bits = 8
+			output_hint.data.dl_tensor.dtype.code = DLDataTypeCode.kDLUInt
+
+		audio = self.lib.decode_audio(input_path.encode() if input_path else None, probe, input_hint, output_hint, filter_string.encode() if filter_string else None)
+		print('audio', audio.data.dl_tensor.data)
 		if audio.error:
 			raise Exception(audio.error.decode())
 		return audio
-
-	def __bytes__(self):
-		return bytes(memoryview(ctypes.cast(self.data.dl_tensor.data, ctypes.POINTER(ctypes.c_ubyte * self.nbytes)).contents))
-
+	
 	def to_dlpack(self):
 		assert self.byte_order == 'native' or self.byte_order == sys.byteorder
 		return PyCapsule_New(ctypes.byref(self.data), b'dltensor', None)
 
+	#def __bytes__(self):
+	#	return bytes(memoryview(ctypes.cast(self.data.dl_tensor.data, ctypes.POINTER(ctypes.c_ubyte * self.data.dl_tensor.nbytes)).contents))
+
 	def free(self):
 		#TODO: https://stackoverflow.com/questions/37988849/safer-way-to-expose-a-c-allocated-memory-buffer-using-numpy-ctypes
-		self.data.deleter(ctypes.byref(self.data))
+		if self.data.deleter:
+			self.data.deleter(ctypes.byref(self.data))
 
-class numpy_from_dlpack:
-	def __init__(self, pycapsule):
-		self.pycapsule = pycapsule
-		self.data = ctypes.cast(PyCapsule_GetPointer(pycapsule, b'dltensor'), ctypes.POINTER(DLManagedTensor)).contents
-
-	def __array__(self):
-		# only contig for now
-		dl_tensor = self.data.dl_tensor
-		shape = [dl_tensor.shape[dim] for dim in range(dl_tensor.ndim)]
-		pointer = ctypes.cast(dl_tensor.data, ctypes.POINTER(ctypes.c_ubyte * dl_tensor.itemsize))
-		return numpy.ctypeslib.as_array(pointer, shape = shape).view(dl_tensor.dtype.descr)
-
-	def __del__(self):
-		self.data.deleter(ctypes.byref(self.data))
+def numpy_from_dlpack(pycapsule):
+	data = ctypes.cast(PyCapsule_GetPointer(pycapsule, b'dltensor'), ctypes.POINTER(DLManagedTensor)).contents
+	wrapped = type('', (), dict(__array_interface__ = data.dl_tensor.__array_interface__, __del__ = lambda self: data.deleter(ctypes.byref(data)) if data.deleter else None))()
+	return numpy.asarray(wrapped)
+	
 
 if __name__ == '__main__':
+	import argparse
 	import numpy
 	try:
-		import torch
 		import torch.utils.dlpack
 	except:
 		pass
+
+	parser = argparse.ArgumentParser()
+	parser.add_argument('--input-path', '-i')
+	parser.add_argument('--output-path', '-o')
+	parser.add_argument('--buffer', action = 'store_true')
+	parser.add_argument('--probe', action = 'store_true')
+	parser.add_argument('--filter', default = 'volume=volume=3.0') 
+	args = parser.parse_args()
 	
 	decode_audio = DecodeAudio()
 
-	audio = decode_audio(sys.argv[1])
-	print('ffplay', '-f', audio.fmt, '-ac', audio.num_channels, '-ar', audio.sample_rate, '-i', sys.argv[1], '# num samples:', audio.num_samples)
-
-	dlpack_tensor = audio.to_dlpack()
-
-	if 'numpy' in sys.argv[2]:
-		array = numpy_from_dlpack(dlpack_tensor)
-	elif 'torch' in sys.argv[2]:
-		array = torch.utils.dlpack.from_dlpack(dlpack_tensor)
+	input_buffer_ = open(args.input_path, 'rb').read()
+	input_buffer = numpy.frombuffer(input_buffer_, dtype = numpy.uint8)
+	output_buffer = bytearray(b'\0' * 1000000) #numpy.zeros((1_000_000), dtype = numpy.uint8)
 	
-	del array
+	audio = decode_audio(input_path = args.input_path if not args.buffer else None, input_buffer = input_buffer if args.buffer else None, output_buffer = output_buffer if args.buffer else None, filter_string = args.filter, probe = args.probe)
+	
+	print('ffplay', '-f', audio.fmt, '-ac', audio.num_channels, '-ar', audio.sample_rate, '-i', args.input_path, f'# num_samples={audio.num_samples}, num_channels={audio.num_channels}, sample_fmt={audio.fmt}, {audio.data.dl_tensor}')
+	
+	if not args.probe:
+		dlpack_tensor = audio.to_dlpack()
+		if 'numpy' in args.output_path:
+			array = numpy_from_dlpack(dlpack_tensor)
+		elif 'torch' in args.output_path:
+			array = torch.utils.dlpack.from_dlpack(dlpack_tensor)
 
-	#print(array.dtype, array.shape)
-	#numpy.asarray(array).tofile(sys.argv[2])
-	#print('ffplay', '-f', audio.fmt, '-ac', audio.num_channels, '-ar', audio.sample_rate, '-i', sys.argv[2], '# num samples:', audio.num_samples)
+		numpy.asarray(array).tofile(args.output_path)
+		print('ffplay', '-f', audio.fmt, '-ac', audio.num_channels, '-ar', audio.sample_rate, '-i', args.output_path, '# num samples:', audio.num_samples, 'dtype', array.dtype, 'shape', array.shape)
+	
+		del array
+		del dlpack_tensor

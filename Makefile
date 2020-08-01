@@ -1,10 +1,16 @@
 CC = gcc
 
-LIBS_FFMPEG = -lavformat -lavcodec -lavutil
+LIBS_FFMPEG = -lavformat -lavcodec -lavfilter -lavutil
 
 SHAREDFLAGS = -shared -fPIC
 
-ffmpeg: decode_audio_ffmpeg decode_audio_ffmpeg.so
+CFLAGS = -g
+
+ffmpeg: avio_reading decode_audio_ffmpeg decode_audio_ffmpeg.so
+
+avio_reading: avio_reading.c
+	$(CC) -o $@ $< $(LIBS_FFMPEG) $(CFLAGS)
+	
 
 decode_audio_ffmpeg: decode_audio_ffmpeg.c
 	$(CC) -o $@ $< $(LIBS_FFMPEG) $(CFLAGS)
