@@ -2,6 +2,7 @@
 # support output fmt / sample_rate (make aresample)
 # move probe fall-out earlier
 # support raw data input 
+# redo API, maybe add explicit duration, maybe remove DLPack, keep only NumPy
 
 import os
 import sys
