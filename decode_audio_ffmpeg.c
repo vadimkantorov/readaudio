@@ -61,17 +61,17 @@ struct DecodeAudio
 	DLManagedTensor data;
 };
 
-void process_output_frame(uint8_t** data, AVFrame* frame, int nb_samples, int nb_channels, uint64_t* data_len, int itemsize)
+void process_output_frame(uint8_t** data, AVFrame* frame, int num_samples, int num_channels, uint64_t* data_len, int itemsize)
 {
 	//data = memcpy(*data, frame->data) + itemsize * frame->nb_samples * av_ctx->channels;
 	
-	for (int i = 0; i < nb_samples; i++)
+	for (int i = 0; i < num_samples; i++)
 	{
-		for (int ch = 0; ch < nb_channels; ch++)
+		for (int c = 0; c < num_channels; c++)
 		{
 			if(*data_len >= itemsize)
 			{
-				*data = memcpy(*data, frame->data[ch] + itemsize * i, itemsize) + itemsize;
+				*data = memcpy(*data, frame->data[c] + itemsize * i, itemsize) + itemsize;
 				*data_len -= itemsize;
 			}
 			
@@ -290,23 +290,27 @@ struct DecodeAudio decode_audio(const char* input_path, int probe, struct Decode
 		static const int64_t out_channel_layouts[] = { AV_CH_LAYOUT_MONO, -1 };
 		static const int out_sample_rates[] = { 8000, -1 };
 
-		if (av_opt_set_int_list(buffersink_ctx, "sample_fmts", out_sample_fmts, -1, AV_OPT_SEARCH_CHILDREN) < 0)
-		{
-			strcpy(audio.error, "Cannot set output sample format");
-			goto end;
-		}
+		//if (av_opt_set_int_list(buffersink_ctx, "sample_fmts", out_sample_fmts, -1, AV_OPT_SEARCH_CHILDREN) < 0)
+		//{
+		//	strcpy(audio.error, "Cannot set output sample format");
+		//	goto end;
+		//}
 
-		if (av_opt_set_int_list(buffersink_ctx, "channel_layouts", out_channel_layouts, -1, AV_OPT_SEARCH_CHILDREN) < 0) 
-		{
-			strcpy(audio.error, "Cannot set output channel layout");
-			goto end;
-		}
+		//if (av_opt_set_int_list(buffersink_ctx, "channel_layouts", out_channel_layouts, -1, AV_OPT_SEARCH_CHILDREN) < 0) 
+		//{
+		//	strcpy(audio.error, "Cannot set output channel layout");
+		//	goto end;
+		//}
 
-		if (av_opt_set_int_list(buffersink_ctx, "sample_rates", out_sample_rates, -1, AV_OPT_SEARCH_CHILDREN) < 0)
-		{
-			strcpy(audio.error, "Cannot set output sample rate");
-			goto end;
-		}
+		//if (av_opt_set_int_list(buffersink_ctx, "sample_rates", out_sample_rates, -1, AV_OPT_SEARCH_CHILDREN) < 0)
+		//{
+		//	strcpy(audio.error, "Cannot set output sample rate");
+		//	goto end;
+		//}
+
+		//av_opt_set_int(buffersink_ctx, "sample_fmt", out_sample_fmts[0] , AV_OPT_SEARCH_CHILDREN);
+		//av_opt_set_int(buffersink_ctx, "sample_rate", out_sample_rates[0], AV_OPT_SEARCH_CHILDREN);
+		//av_opt_set_int(buffersink_ctx, "channel_layout", out_channel_layouts[0], AV_OPT_SEARCH_CHILDREN);
 
 		gis->name = av_strdup("out");
 		gis->filter_ctx = buffersink_ctx;
