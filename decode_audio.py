@@ -1,6 +1,3 @@
-# support output fmt / sample_rate for filtering mode
-# support output fmt / sample_rate (make aresample)
-# move probe fall-out earlier
 # support raw data input 
 # redo API, maybe add explicit duration, maybe remove DLPack, keep only NumPy
 
@@ -41,7 +38,7 @@ class DLDataType(ctypes.Structure):
 		return [('f' + str(l), typestr) for l in range(self.lanes)]
 
 	def __str__(self):
-		return repr(self.descr)
+		return repr(self.descr) if len(self.descr) > 1 else self.descr[0][1]
 
 class DLContext(ctypes.Structure):
 	_fields_ = [
@@ -124,36 +121,41 @@ class DecodeAudio(ctypes.Structure):
 		self.lib.decode_audio.argtypes = [ctypes.c_char_p, ctypes.c_int, DecodeAudio, DecodeAudio, ctypes.c_char_p]
 		self.lib.decode_audio.restype = DecodeAudio	
 
-	def __call__(self, input_path = None, probe = False, input_buffer = None, output_buffer = None, filter_string = ''):
-		input_hint = DecodeAudio()
-		output_hint = DecodeAudio()
+	def __str__(self):
+		return f'num_samples={self.num_samples}, num_channels={self.num_channels}, sample_fmt={self.fmt.decode()}, {self.data.dl_tensor}'
+
+	def __call__(self, input_path = None, probe = False, input_buffer = None, output_buffer = None, sample_rate = None, filter_string = ''):
+		input_options = DecodeAudio()
+		output_options = DecodeAudio()
 
 		input_buffer_len = ctypes.c_int64(len(input_buffer) if input_buffer is not None else 0)
 		if input_buffer is not None:
-			#input_hint.data.dl_tensor.data = ctypes.cast((ctypes.c_char * len(input_buffer)).from_buffer(input_buffer), ctypes.c_void_p) 
+			#input_options.data.dl_tensor.data = ctypes.cast((ctypes.c_char * len(input_buffer)).from_buffer(input_buffer), ctypes.c_void_p) 
 			
-			#input_hint.data.dl_tensor.data = ctypes.cast(ctypes.addressof(ctypes.cast(input_buffer, ctypes.POINTER(ctypes.c_char)).contents), ctypes.c_void_p)
-			#input_hint.data.dl_tensor.data = ctypes.cast(input_buffer, ctypes.c_void_p)
-			#input_hint.data.dl_tensor.data = input_buffer.ctypes.data_as(ctypes.c_void_p)
-			input_hint.data.dl_tensor.data = ctypes.c_void_p(input_buffer.__array_interface__['data'][0])
+			#input_options.data.dl_tensor.data = ctypes.cast(ctypes.addressof(ctypes.cast(input_buffer, ctypes.POINTER(ctypes.c_char)).contents), ctypes.c_void_p)
+			#input_options.data.dl_tensor.data = ctypes.cast(input_buffer, ctypes.c_void_p)
+			#input_options.data.dl_tensor.data = input_buffer.ctypes.data_as(ctypes.c_void_p)
+			input_options.data.dl_tensor.data = ctypes.c_void_p(input_buffer.__array_interface__['data'][0])
 			
-			input_hint.data.dl_tensor.shape = ctypes.cast(ctypes.addressof(input_buffer_len), ctypes.POINTER(ctypes.c_int64))
-			input_hint.data.dl_tensor.ndim = 1
-			input_hint.data.dl_tensor.dtype.lanes = 1
-			input_hint.data.dl_tensor.dtype.bits = 8
-			input_hint.data.dl_tensor.dtype.code = DLDataTypeCode.kDLUInt
+			input_options.data.dl_tensor.shape = ctypes.cast(ctypes.addressof(input_buffer_len), ctypes.POINTER(ctypes.c_int64))
+			input_options.data.dl_tensor.ndim = 1
+			input_options.data.dl_tensor.dtype.lanes = 1
+			input_options.data.dl_tensor.dtype.bits = 8
+			input_options.data.dl_tensor.dtype.code = DLDataTypeCode.kDLUInt
 
 		output_buffer_len = ctypes.c_int64(len(output_buffer) if output_buffer is not None else 0)
 		if output_buffer is not None:
-			output_hint.data.dl_tensor.data = ctypes.cast((ctypes.c_char * len(input_buffer)).from_buffer(memoryview(output_buffer)), ctypes.c_void_p) 
-			output_hint.data.dl_tensor.shape = ctypes.cast(ctypes.addressof(output_buffer_len), ctypes.POINTER(ctypes.c_int64))
-			output_hint.data.dl_tensor.ndim = 1
-			output_hint.data.dl_tensor.dtype.lanes = 1
-			output_hint.data.dl_tensor.dtype.bits = 8
-			output_hint.data.dl_tensor.dtype.code = DLDataTypeCode.kDLUInt
+			output_options.data.dl_tensor.data = ctypes.cast((ctypes.c_char * len(input_buffer)).from_buffer(memoryview(output_buffer)), ctypes.c_void_p) 
+			output_options.data.dl_tensor.shape = ctypes.cast(ctypes.addressof(output_buffer_len), ctypes.POINTER(ctypes.c_int64))
+			output_options.data.dl_tensor.ndim = 1
+			output_options.data.dl_tensor.dtype.lanes = 1
+			output_options.data.dl_tensor.dtype.bits = 8
+			output_options.data.dl_tensor.dtype.code = DLDataTypeCode.kDLUInt
+		
+		if sample_rate is not None:
+			output_options.sample_rate = sample_rate
 
-		audio = self.lib.decode_audio(input_path.encode() if input_path else None, probe, input_hint, output_hint, filter_string.encode() if filter_string else None)
-		print('audio', audio.data.dl_tensor.data)
+		audio = self.lib.decode_audio(input_path.encode() if input_path else None, probe, input_options, output_options, filter_string.encode() if filter_string else None)
 		if audio.error:
 			raise Exception(audio.error.decode())
 		return audio
@@ -189,7 +191,9 @@ if __name__ == '__main__':
 	parser.add_argument('--output-path', '-o')
 	parser.add_argument('--buffer', action = 'store_true')
 	parser.add_argument('--probe', action = 'store_true')
-	parser.add_argument('--filter', default = 'volume=volume=3.0') 
+	#parser.add_argument('--filter', default = 'volume=volume=3.0,aformat=sample_rates=8000:sample_fmts=s16:channel_layouts=0x4') 
+	parser.add_argument('--sample-rate', type = int)
+	parser.add_argument('--filter', default = 'volume=volume=3.0,aresample=8000,aformat=sample_fmts=s16:channel_layouts=mono') 
 	args = parser.parse_args()
 	
 	decode_audio = DecodeAudio()
@@ -198,10 +202,9 @@ if __name__ == '__main__':
 	input_buffer = numpy.frombuffer(input_buffer_, dtype = numpy.uint8)
 	output_buffer = bytearray(b'\0' * 1000000) #numpy.zeros((1_000_000), dtype = numpy.uint8)
 	
-	audio = decode_audio(input_path = args.input_path if not args.buffer else None, input_buffer = input_buffer if args.buffer else None, output_buffer = output_buffer if args.buffer else None, filter_string = args.filter, probe = args.probe)
+	audio = decode_audio(input_path = args.input_path if not args.buffer else None, input_buffer = input_buffer if args.buffer else None, output_buffer = output_buffer if args.buffer else None, filter_string = args.filter, probe = args.probe, sample_rate = args.sample_rate)
 	
-	print('ffplay', '-f', audio.fmt, '-ac', audio.num_channels, '-ar', audio.sample_rate, '-i', args.input_path, f'# num_samples={audio.num_samples}, num_channels={audio.num_channels}, sample_fmt={audio.fmt}, {audio.data.dl_tensor}')
-	
+	print('ffplay', '-f', audio.fmt.decode(), '-ac', audio.num_channels, '-ar', audio.sample_rate, '-i', args.input_path, '#', audio)
 	if not args.probe:
 		dlpack_tensor = audio.to_dlpack()
 		if 'numpy' in args.output_path:
@@ -210,7 +213,7 @@ if __name__ == '__main__':
 			array = torch.utils.dlpack.from_dlpack(dlpack_tensor)
 
 		numpy.asarray(array).tofile(args.output_path)
-		print('ffplay', '-f', audio.fmt, '-ac', audio.num_channels, '-ar', audio.sample_rate, '-i', args.output_path, '# num samples:', audio.num_samples, 'dtype', array.dtype, 'shape', array.shape)
+		print('ffplay', '-f', audio.fmt.decode(), '-ac', audio.num_channels, '-ar', audio.sample_rate, '-i', args.output_path, '# num samples:', audio.num_samples, 'dtype', array.dtype, 'shape', array.shape)
 	
 		del array
 		del dlpack_tensor
