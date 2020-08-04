@@ -1,5 +1,6 @@
 # support raw data input 
 # redo API, maybe add explicit duration, maybe remove DLPack, keep only NumPy
+# specify output channel_layour?
 
 # https://bugs.python.org/issue11429
 # https://bugs.python.org/issue12836
@@ -148,18 +149,20 @@ class DecodeAudio(ctypes.Structure):
 			
 			input_options.data.dl_tensor.shape = ctypes.cast(ctypes.addressof(input_buffer_len), ctypes.POINTER(ctypes.c_int64))
 			input_options.data.dl_tensor.ndim = 1
-			input_options.data.dl_tensor.dtype.lanes = 1
-			input_options.data.dl_tensor.dtype.bits = 8
-			input_options.data.dl_tensor.dtype.code = DLDataTypeCode.kDLUInt
+			input_options.data.dl_tensor.dtype = DLDataType(lanes = 1, bits = 8, code = DLDataTypeCode.kDLUInt)
+			#input_options.data.dl_tensor.dtype.lanes = 1
+			#input_options.data.dl_tensor.dtype.bits = 8
+			#input_options.data.dl_tensor.dtype.code = DLDataTypeCode.kDLUInt
 
 		output_buffer_len = ctypes.c_int64(len(output_buffer) if output_buffer is not None else 0)
 		if output_buffer is not None:
 			output_options.data.dl_tensor.data = ctypes.cast((ctypes.c_char * len(input_buffer)).from_buffer(memoryview(output_buffer)), ctypes.c_void_p) 
 			output_options.data.dl_tensor.shape = ctypes.cast(ctypes.addressof(output_buffer_len), ctypes.POINTER(ctypes.c_int64))
 			output_options.data.dl_tensor.ndim = 1
-			output_options.data.dl_tensor.dtype.lanes = 1
-			output_options.data.dl_tensor.dtype.bits = 8
-			output_options.data.dl_tensor.dtype.code = DLDataTypeCode.kDLUInt
+			output_options.data.dl_tensor.dtype = DLDataType(lanes = 1, bits = 8, code = DLDataTypeCode.kDLUInt)
+			#output_options.data.dl_tensor.dtype.lanes = 1
+			#output_options.data.dl_tensor.dtype.bits = 8
+			#output_options.data.dl_tensor.dtype.code = DLDataTypeCode.kDLUInt
 		
 		if sample_rate is not None:
 			output_options.sample_rate = sample_rate
@@ -189,23 +192,30 @@ def numpy_from_dlpack(pycapsule):
 
 if __name__ == '__main__':
 	import argparse
+	import time
 	import numpy
-	try:
-		import torch.utils.dlpack
-	except:
-		pass
-
+	import scipy.io.wavfile
+	import soundfile
+	import torch.utils.dlpack
+	
 	parser = argparse.ArgumentParser()
-	parser.add_argument('--input-path', '-i')
-	parser.add_argument('--output-path', '-o')
+	parser.add_argument('--input-path', '-i', default = 'test.wav')
+	parser.add_argument('--output-path', '-o', default = 'numpy.raw')
 	parser.add_argument('--buffer', action = 'store_true')
 	parser.add_argument('--probe', action = 'store_true')
 	parser.add_argument('--sample-rate', type = int)
 	parser.add_argument('--filter', default = 'volume=volume=3.0') 
 	args = parser.parse_args()
 	
-	decode_audio = DecodeAudio()
+	def measure(audio_path, f, **kwargs):
+		tic = time.time()
+		f(audio_path, **kwargs)
+		return time.time() - tic
 
+	print('scipy.io.wavfile.read', measure(args.input_path, scipy.io.wavfile.read))
+	print('soundfile.read', measure(args.input_path, soundfile.read, dtype = 'int16'))
+
+	decode_audio = DecodeAudio()
 	input_buffer_ = open(args.input_path, 'rb').read()
 	input_buffer = numpy.frombuffer(input_buffer_, dtype = numpy.uint8)
 	output_buffer = bytearray(b'\0' * 1000000) #numpy.zeros((1_000_000), dtype = numpy.uint8)

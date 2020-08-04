@@ -274,6 +274,7 @@ struct DecodeAudio decode_audio(const char* input_path, int probe, struct Decode
 	double in_duration = fmt_ctx->duration / (float) AV_TIME_BASE; assert(in_duration > 0);
 	double out_duration = in_duration;
 	int in_sample_rate = dec_ctx->sample_rate;
+	int out_sample_rate = output_options.sample_rate > 0 ? output_options.sample_rate : in_sample_rate;
 	uint64_t out_num_samples  = out_duration * out_sample_rate;
 	int out_num_channels = dec_ctx->channels;
 
@@ -306,7 +307,6 @@ struct DecodeAudio decode_audio(const char* input_path, int probe, struct Decode
 		out_sample_fmt = in_sample_fmt;
 		out_dtype = in_dtype;
 	}
-	int out_sample_rate = output_options.sample_rate > 0 ? output_options.sample_rate : in_sample_rate;
 
 	if (!dec_ctx->channel_layout)
 		dec_ctx->channel_layout = av_get_default_channel_layout(dec_ctx->channels);
