@@ -104,6 +104,7 @@ class DecodeAudio(ctypes.Structure):
 		('sample_rate', ctypes.c_ulonglong),
 		('num_channels', ctypes.c_ulonglong),
 		('num_samples', ctypes.c_ulonglong),
+		('duration', ctypes.c_double),
 		('itemsize', ctypes.c_ulonglong),
 		('data', DLManagedTensor)
 	]
@@ -191,9 +192,8 @@ if __name__ == '__main__':
 	parser.add_argument('--output-path', '-o')
 	parser.add_argument('--buffer', action = 'store_true')
 	parser.add_argument('--probe', action = 'store_true')
-	#parser.add_argument('--filter', default = 'volume=volume=3.0,aformat=sample_rates=8000:sample_fmts=s16:channel_layouts=0x4') 
 	parser.add_argument('--sample-rate', type = int)
-	parser.add_argument('--filter', default = 'volume=volume=3.0,aresample=8000,aformat=sample_fmts=s16:channel_layouts=mono') 
+	parser.add_argument('--filter', default = 'volume=volume=3.0') 
 	args = parser.parse_args()
 	
 	decode_audio = DecodeAudio()

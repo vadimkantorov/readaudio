@@ -54,6 +54,7 @@ struct DecodeAudio
 	uint64_t num_channels;
 	uint64_t num_samples;
 	uint64_t itemsize;
+	double duration;
 	DLManagedTensor data;
 };
 
@@ -120,7 +121,7 @@ end:
 	return ret;
 }
 
-struct avio_cursor
+struct buffer_cursor
 {
 	uint8_t *base;
 	size_t size;
@@ -130,7 +131,7 @@ struct avio_cursor
 
 static int buffer_read(void *opaque, uint8_t *buf, int buf_size)
 {
-    struct avio_cursor *cursor = (struct avio_cursor *)opaque;
+    struct buffer_cursor *cursor = (struct buffer_cursor *)opaque;
     buf_size = FFMIN(buf_size, cursor->left);
 
     if (!buf_size)
@@ -144,7 +145,7 @@ static int buffer_read(void *opaque, uint8_t *buf, int buf_size)
 
 static int64_t buffer_seek(void* opaque, int64_t offset, int whence)
 {
-    struct avio_cursor *cursor = (struct avio_cursor *)opaque;
+    struct buffer_cursor *cursor = (struct buffer_cursor *)opaque;
 	if(whence == AVSEEK_SIZE)
 		return cursor->size;
 
@@ -170,7 +171,7 @@ struct DecodeAudio decode_audio(const char* input_path, int probe, struct Decode
 	AVFormatContext* fmt_ctx = NULL;
 	AVCodecContext* dec_ctx = NULL;
 	AVPacket* pkt = NULL;
-	char buffersrc_args[512];
+	char filter_args[1024];
 	AVFilterGraph *graph = NULL;
 	AVFilterInOut *gis = avfilter_inout_alloc();
     AVFilterInOut *gos = avfilter_inout_alloc();
@@ -180,7 +181,13 @@ struct DecodeAudio decode_audio(const char* input_path, int probe, struct Decode
     AVFilter *buffersink = avfilter_get_by_name("abuffersink");
 	assert(buffersrc != NULL && buffersink != NULL);
 	uint8_t* avio_ctx_buffer = NULL;
-    struct avio_cursor cursor = { 0 };
+    struct buffer_cursor cursor = { 0 };
+	
+	if(strlen(filter_string) > 512)
+	{
+		strcpy(audio.error, "Too long filter string");
+		goto end;
+	}
 
 	if(input_path == NULL)
 	{
@@ -263,11 +270,13 @@ struct DecodeAudio decode_audio(const char* input_path, int probe, struct Decode
 		{ AV_SAMPLE_FMT_DBL, "f64be", "f64le" , { kDLFloat , 64, 1 }},
 	};
 	
+	//double in_duration = stream->time_base.num * (int)stream->duration / stream->time_base.den;
 	double in_duration = fmt_ctx->duration / (float) AV_TIME_BASE; assert(in_duration > 0);
+	double out_duration = in_duration;
 	int in_sample_rate = dec_ctx->sample_rate;
-	int in_num_channels = dec_ctx->channels;
-	uint64_t in_num_samples  = in_duration * audio.sample_rate;
-	
+	uint64_t out_num_samples  = out_duration * out_sample_rate;
+	int out_num_channels = dec_ctx->channels;
+
 	DLDataType in_dtype, out_dtype;
 	enum AVSampleFormat in_sample_fmt = AV_SAMPLE_FMT_NONE, out_sample_fmt = AV_SAMPLE_FMT_NONE; 
 	for (int k = 0; k < FF_ARRAY_ELEMS(supported_sample_fmt_entries); k++)
@@ -303,11 +312,10 @@ struct DecodeAudio decode_audio(const char* input_path, int probe, struct Decode
 		dec_ctx->channel_layout = av_get_default_channel_layout(dec_ctx->channels);
 	uint64_t channel_layout = dec_ctx->channel_layout;
 
-	//double in_duration = stream->time_base.num * (int)stream->duration / stream->time_base.den;
-	
+	audio.duration = out_duration;
 	audio.sample_rate = out_sample_rate;
-	audio.num_channels = dec_ctx->channels;
-	audio.num_samples = in_duration * out_sample_rate;
+	audio.num_channels = out_num_channels;
+	audio.num_samples = out_num_samples;
 	audio.data.dl_tensor.ctx.device_type = kDLCPU;
 	audio.data.dl_tensor.ndim = 2;
 	audio.data.dl_tensor.dtype = out_dtype; 
@@ -322,12 +330,9 @@ struct DecodeAudio decode_audio(const char* input_path, int probe, struct Decode
 	if(probe)
 		goto end;
     
-	if(out_sample_rate != in_sample_rate)
-	{
-		filter_string = "aresample=sample_rate=16000";
-	}
-
-	if(filter_string != NULL)
+	bool need_filter = filter_string != NULL && strlen(filter_string) > 0;
+	bool need_resample = out_sample_rate != in_sample_rate || out_sample_fmt != in_sample_fmt;
+	if(need_filter || need_resample)
 	{
 		graph = avfilter_graph_alloc();
 		if(!graph)
@@ -336,13 +341,17 @@ struct DecodeAudio decode_audio(const char* input_path, int probe, struct Decode
 			goto end;
 		}
 
-		snprintf(buffersrc_args, sizeof(buffersrc_args), "sample_rate=%d:sample_fmt=%s:channel_layout=0x%"PRIx64":time_base=%d/%d", in_sample_rate, av_get_sample_fmt_name(in_sample_fmt), channel_layout, dec_ctx->time_base.num, dec_ctx->time_base.den);
+		sprintf(filter_args, "sample_rate=%d:sample_fmt=%s:channel_layout=0x%"PRIx64":time_base=%d/%d", in_sample_rate, av_get_sample_fmt_name(in_sample_fmt), channel_layout, dec_ctx->time_base.num, dec_ctx->time_base.den);
 
-		if (avfilter_graph_create_filter(&buffersrc_ctx, buffersrc, "in", buffersrc_args, NULL, graph) < 0)
+		if (avfilter_graph_create_filter(&buffersrc_ctx, buffersrc, "in", filter_args, NULL, graph) < 0)
 		{
 			strcpy(audio.error, "Cannot create buffer source");
 			goto end;
 		}
+		gis->name = av_strdup("out");
+		gis->filter_ctx = buffersink_ctx;
+		gis->pad_idx = 0;
+		gis->next = NULL;
 
 		int ret;
 		if ((ret = avfilter_graph_create_filter(&buffersink_ctx, buffersink, "out", NULL, NULL, graph)) < 0)
@@ -351,37 +360,40 @@ struct DecodeAudio decode_audio(const char* input_path, int probe, struct Decode
 			strcpy(audio.error, "Cannot create buffer sink");
 			goto end;
 		}
-
-		const enum AVSampleFormat out_sample_fmts[] = { out_sample_fmt, -1 };
-		if (av_opt_set_int_list(buffersink_ctx, "sample_fmts", out_sample_fmts, -1, AV_OPT_SEARCH_CHILDREN) < 0)
-		{
-			strcpy(audio.error, "Cannot set output sample format");
-			goto end;
-		}
-		const int64_t out_channel_layouts[] = { channel_layout , -1 };
-		if (av_opt_set_int_list(buffersink_ctx, "channel_layouts", out_channel_layouts, -1, AV_OPT_SEARCH_CHILDREN) < 0) 
-		{
-			strcpy(audio.error, "Cannot set output channel layout");
-			goto end;
-		}
-		const int out_sample_rates[] = { out_sample_rate, -1 };
-		if (av_opt_set_int_list(buffersink_ctx, "sample_rates", out_sample_rates, -1, AV_OPT_SEARCH_CHILDREN) < 0)
-		{
-			strcpy(audio.error, "Cannot set output sample rate");
-			goto end;
-		}
-
-		gis->name = av_strdup("out");
-		gis->filter_ctx = buffersink_ctx;
-		gis->pad_idx = 0;
-		gis->next = NULL;
-		
 		gos->name = av_strdup("in");
 		gos->filter_ctx = buffersrc_ctx;
 		gos->pad_idx = 0;
 		gos->next = NULL;
+
+		//const enum AVSampleFormat out_sample_fmts[] = { out_sample_fmt, -1 };
+		//if (av_opt_set_int_list(buffersink_ctx, "sample_fmts", out_sample_fmts, -1, AV_OPT_SEARCH_CHILDREN) < 0)
+		//{
+		//	strcpy(audio.error, "Cannot set output sample format");
+		//	goto end;
+		//}
+		//const int64_t out_channel_layouts[] = { channel_layout , -1 };
+		//if (av_opt_set_int_list(buffersink_ctx, "channel_layouts", out_channel_layouts, -1, AV_OPT_SEARCH_CHILDREN) < 0) 
+		//{
+		//	strcpy(audio.error, "Cannot set output channel layout");
+		//	goto end;
+		//}
+		//const int out_sample_rates[] = { out_sample_rate, -1 };
+		//if (av_opt_set_int_list(buffersink_ctx, "sample_rates", out_sample_rates, -1, AV_OPT_SEARCH_CHILDREN) < 0)
+		//{
+		//	strcpy(audio.error, "Cannot set output sample rate");
+		//	goto end;
+		//}
 		
-		if(avfilter_graph_parse_ptr(graph, filter_string, &gis, &gos, NULL) < 0)
+		if(need_resample)
+		{
+			sprintf(filter_args, "%s%saresample=out_sample_rate=%d:out_sample_fmt=%d,aformat=sample_rates=%d:sample_fmts=%d:channel_layouts=0x%"PRIu64, need_filter ? filter_string : "", need_filter ? "," : "", out_sample_rate, (int)out_sample_fmt, out_sample_rate, (int)out_sample_fmt, channel_layout);
+		}
+		else
+		{
+			sprintf(filter_args, "%s%saformat=sample_rates=%d:sample_fmts=%d:channel_layouts=0x%"PRIu64, need_filter ? filter_string : "", need_filter ? "," : "", out_sample_rate, (int)out_sample_fmt, channel_layout);
+		}
+		
+		if(avfilter_graph_parse_ptr(graph, filter_args, &gis, &gos, NULL) < 0)
 		{
 			strcpy(audio.error, "Cannot parse graph");
 			goto end;
