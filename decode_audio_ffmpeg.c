@@ -217,8 +217,8 @@ struct DecodeAudio decode_audio(const char* input_path, int probe, struct Decode
 		goto end;
 	}
 
-	fmt_ctx->probesize = 128;
-	fmt_ctx->max_analyze_duration = 0.01 / AV_TIME_BASE;
+	//fmt_ctx->probesize = 1;
+	//fmt_ctx->max_analyze_duration = 0.01 / AV_TIME_BASE;
 	printf("decode_audio_BEFORE: %.2f msec\n", (float)(clock() - tic) * 1000 / CLOCKS_PER_SEC);
 	if (avformat_find_stream_info(fmt_ctx, NULL) < 0)
 	{
