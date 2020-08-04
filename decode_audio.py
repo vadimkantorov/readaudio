@@ -1,6 +1,14 @@
 # support raw data input 
 # redo API, maybe add explicit duration, maybe remove DLPack, keep only NumPy
 
+# https://bugs.python.org/issue11429
+# https://bugs.python.org/issue12836
+# https://stackoverflow.com/questions/20439640/ffmpeg-audio-transcoding-using-libav-libraries
+# https://stackoverflow.com/questions/45549285/resampling-audio-using-libswresample-from-48000-to-44100
+# https://www.codetd.com/en/article/6791150
+# https://gist.github.com/jimjibone/6569303
+# https://gavv.github.io/articles/decode-play/
+
 import os
 import sys
 import ctypes
