@@ -207,21 +207,22 @@ if __name__ == '__main__':
 	parser.add_argument('--filter', default = 'volume=volume=3.0') 
 	args = parser.parse_args()
 	
-	def measure(audio_path, f, **kwargs):
+	def measure(k, f, audio_path, **kwargs):
 		tic = time.time()
-		f(audio_path, **kwargs)
-		return time.time() - tic
+		audio = f(audio_path, **kwargs)
+		print(k, time.time() - tic)
+		return audio
 
-	print('scipy.io.wavfile.read', measure(args.input_path, scipy.io.wavfile.read))
-	print('soundfile.read', measure(args.input_path, soundfile.read, dtype = 'int16'))
+	measure('scipy.io.wavfile.read', scipy.io.wavfile.read, args.input_path)
+	measure('soundfile.read', soundfile.read, args.input_path, dtype = 'int16')
 
 	decode_audio = DecodeAudio()
+
 	input_buffer_ = open(args.input_path, 'rb').read()
 	input_buffer = numpy.frombuffer(input_buffer_, dtype = numpy.uint8)
 	output_buffer = bytearray(b'\0' * 1000000) #numpy.zeros((1_000_000), dtype = numpy.uint8)
-	
-	audio = decode_audio(input_path = args.input_path if not args.buffer else None, input_buffer = input_buffer if args.buffer else None, output_buffer = output_buffer if args.buffer else None, filter_string = args.filter, probe = args.probe, sample_rate = args.sample_rate)
-	
+	audio = measure('decode_audio', decode_audio, args.input_path if not args.buffer else None, input_buffer = input_buffer if args.buffer else None, output_buffer = output_buffer if args.buffer else None, filter_string = args.filter, probe = args.probe, sample_rate = args.sample_rate)
+
 	print('ffplay', '-f', audio.fmt.decode(), '-ac', audio.num_channels, '-ar', audio.sample_rate, '-i', args.input_path, '#', audio)
 	if not args.probe:
 		dlpack_tensor = audio.to_dlpack()
