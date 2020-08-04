@@ -117,14 +117,6 @@ class DecodeAudio(ctypes.Structure):
 		('itemsize', ctypes.c_ulonglong),
 		('data', DLManagedTensor)
 	]
-
-	@property
-	def dtype(self):
-		return 'int16' if b's16' in self.fmt else 'float32' if b'f32' in self.fmt else 'uint8'
-
-	@property
-	def byte_order(self):
-		return 'little' if b'le' in self.fmt else 'big' if b'be' in self.fmt else 'native'
 	
 	def __init__(self, lib_path = os.path.abspath('decode_audio_ffmpeg.so')):
 		self.lib = ctypes.CDLL(lib_path)
@@ -135,34 +127,28 @@ class DecodeAudio(ctypes.Structure):
 		return f'num_samples={self.num_samples}, num_channels={self.num_channels}, sample_fmt={self.fmt.decode()}, {self.data.dl_tensor}'
 
 	def __call__(self, input_path = None, probe = False, input_buffer = None, output_buffer = None, sample_rate = None, filter_string = ''):
+		uint8 = DLDataType(lanes = 1, bits = 8, code = DLDataTypeCode.kDLUInt)
+		shape_single_dim = lambda buffer_len: ctypes.cast(ctypes.addressof(buffer_len), ctypes.POINTER(ctypes.c_int64))
+
 		input_options = DecodeAudio()
 		output_options = DecodeAudio()
-
+		
 		input_buffer_len = ctypes.c_int64(len(input_buffer) if input_buffer is not None else 0)
+		output_buffer_len = ctypes.c_int64(len(output_buffer) if output_buffer is not None else 0)
 		if input_buffer is not None:
-			#input_options.data.dl_tensor.data = ctypes.cast((ctypes.c_char * len(input_buffer)).from_buffer(input_buffer), ctypes.c_void_p) 
-			
-			#input_options.data.dl_tensor.data = ctypes.cast(ctypes.addressof(ctypes.cast(input_buffer, ctypes.POINTER(ctypes.c_char)).contents), ctypes.c_void_p)
 			#input_options.data.dl_tensor.data = ctypes.cast(input_buffer, ctypes.c_void_p)
 			#input_options.data.dl_tensor.data = input_buffer.ctypes.data_as(ctypes.c_void_p)
 			input_options.data.dl_tensor.data = ctypes.c_void_p(input_buffer.__array_interface__['data'][0])
 			
-			input_options.data.dl_tensor.shape = ctypes.cast(ctypes.addressof(input_buffer_len), ctypes.POINTER(ctypes.c_int64))
+			input_options.data.dl_tensor.shape = shape_single_dim(input_buffer_len)
 			input_options.data.dl_tensor.ndim = 1
-			input_options.data.dl_tensor.dtype = DLDataType(lanes = 1, bits = 8, code = DLDataTypeCode.kDLUInt)
-			#input_options.data.dl_tensor.dtype.lanes = 1
-			#input_options.data.dl_tensor.dtype.bits = 8
-			#input_options.data.dl_tensor.dtype.code = DLDataTypeCode.kDLUInt
+			input_options.data.dl_tensor.dtype = uint8
 
-		output_buffer_len = ctypes.c_int64(len(output_buffer) if output_buffer is not None else 0)
 		if output_buffer is not None:
 			output_options.data.dl_tensor.data = ctypes.cast((ctypes.c_char * len(input_buffer)).from_buffer(memoryview(output_buffer)), ctypes.c_void_p) 
-			output_options.data.dl_tensor.shape = ctypes.cast(ctypes.addressof(output_buffer_len), ctypes.POINTER(ctypes.c_int64))
+			output_options.data.dl_tensor.shape = shape_single_dim(output_buffer_len)
 			output_options.data.dl_tensor.ndim = 1
-			output_options.data.dl_tensor.dtype = DLDataType(lanes = 1, bits = 8, code = DLDataTypeCode.kDLUInt)
-			#output_options.data.dl_tensor.dtype.lanes = 1
-			#output_options.data.dl_tensor.dtype.bits = 8
-			#output_options.data.dl_tensor.dtype.code = DLDataTypeCode.kDLUInt
+			output_options.data.dl_tensor.dtype = uint8
 		
 		if sample_rate is not None:
 			output_options.sample_rate = sample_rate
@@ -173,16 +159,9 @@ class DecodeAudio(ctypes.Structure):
 		return audio
 	
 	def to_dlpack(self):
-		assert self.byte_order == 'native' or self.byte_order == sys.byteorder
+		byte_order = 'little' if b'le' in self.fmt else 'big' if b'be' in self.fmt else 'native'
+		assert byte_order == 'native' or byte_order == sys.byteorder
 		return PyCapsule_New(ctypes.byref(self.data), b'dltensor', None)
-
-	#def __bytes__(self):
-	#	return bytes(memoryview(ctypes.cast(self.data.dl_tensor.data, ctypes.POINTER(ctypes.c_ubyte * self.data.dl_tensor.nbytes)).contents))
-
-	def free(self):
-		#TODO: https://stackoverflow.com/questions/37988849/safer-way-to-expose-a-c-allocated-memory-buffer-using-numpy-ctypes
-		if self.data.deleter:
-			self.data.deleter(ctypes.byref(self.data))
 
 def numpy_from_dlpack(pycapsule):
 	data = ctypes.cast(PyCapsule_GetPointer(pycapsule, b'dltensor'), ctypes.POINTER(DLManagedTensor)).contents
@@ -210,7 +189,7 @@ if __name__ == '__main__':
 	def measure(k, f, audio_path, **kwargs):
 		tic = time.time()
 		audio = f(audio_path, **kwargs)
-		print(k, time.time() - tic)
+		print(k, (time.time() - tic) * 1000, 'msec')
 		return audio
 
 	measure('scipy.io.wavfile.read', scipy.io.wavfile.read, args.input_path)
