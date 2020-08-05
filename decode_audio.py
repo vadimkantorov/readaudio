@@ -183,13 +183,14 @@ if __name__ == '__main__':
 	parser.add_argument('--buffer', action = 'store_true')
 	parser.add_argument('--probe', action = 'store_true')
 	parser.add_argument('--sample-rate', type = int)
-	parser.add_argument('--filter', default = 'volume=volume=3.0') 
+	parser.add_argument('--filter', default = '')#volume=volume=3.0') 
 	args = parser.parse_args()
 	
-	def measure(k, f, audio_path, **kwargs):
-		tic = time.time()
-		audio = f(audio_path, **kwargs)
-		print(k, (time.time() - tic) * 1000, 'msec')
+	def measure(k, f, audio_path, K = 100, timer = time.process_time, **kwargs):
+		tic = timer()
+		for i in range(K):
+			audio = f(audio_path, **kwargs)
+		print(k, (timer() - tic) * 1000 / K, 'msec')
 		return audio
 
 	measure('scipy.io.wavfile.read', scipy.io.wavfile.read, args.input_path)
@@ -200,7 +201,7 @@ if __name__ == '__main__':
 	input_buffer_ = open(args.input_path, 'rb').read()
 	input_buffer = numpy.frombuffer(input_buffer_, dtype = numpy.uint8)
 	output_buffer = bytearray(b'\0' * 1000000) #numpy.zeros((1_000_000), dtype = numpy.uint8)
-	audio = measure('decode_audio', decode_audio, args.input_path if not args.buffer else None, input_buffer = input_buffer if args.buffer else None, output_buffer = output_buffer if args.buffer else None, filter_string = args.filter, probe = args.probe, sample_rate = args.sample_rate)
+	audio = measure('ffmpeg', decode_audio, args.input_path if not args.buffer else None, input_buffer = input_buffer if args.buffer else None, output_buffer = output_buffer if args.buffer else None, filter_string = args.filter, probe = args.probe, sample_rate = args.sample_rate)
 
 	print('ffplay', '-f', audio.fmt.decode(), '-ac', audio.num_channels, '-ar', audio.sample_rate, '-i', args.input_path, '#', audio)
 	if not args.probe:

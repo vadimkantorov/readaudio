@@ -44,7 +44,7 @@ void __attribute__ ((constructor)) onload()
 	//needed before ffmpeg 4.0, deprecated in ffmpeg 4.0
 	av_register_all();
 	avfilter_register_all();
-	av_log_set_level (AV_LOG_DEBUG);
+	//av_log_set_level (AV_LOG_DEBUG);
 }
 
 struct DecodeAudio
@@ -61,16 +61,19 @@ struct DecodeAudio
 
 void process_output_frame(uint8_t** data, AVFrame* frame, int num_samples, int num_channels, uint64_t* data_len, int itemsize)
 {
-	//data = memcpy(*data, frame->data) + itemsize * frame->nb_samples * av_ctx->channels;
-	
-	for (int i = 0; i < num_samples; i++)
+	if(num_channels == 1)
+		data = memcpy(*data, frame->data, itemsize * frame->nb_samples) + itemsize * frame->nb_samples;
+	else
 	{
-		for (int c = 0; c < num_channels; c++)
+		for (int i = 0; i < num_samples; i++)
 		{
-			if(*data_len >= itemsize)
+			for (int c = 0; c < num_channels; c++)
 			{
-				*data = memcpy(*data, frame->data[c] + itemsize * i, itemsize) + itemsize;
-				*data_len -= itemsize;
+				if(*data_len >= itemsize)
+				{
+					*data = memcpy(*data, frame->data[c] + itemsize * i, itemsize) + itemsize;
+					*data_len -= itemsize;
+				}
 			}
 		}
 	}
@@ -139,7 +142,7 @@ static int buffer_read(void *opaque, uint8_t *buf, int buf_size)
         return AVERROR_EOF;
 
     memcpy(buf, cursor->ptr, buf_size);
-    cursor->ptr  += buf_size;
+    cursor->ptr += buf_size;
     cursor->left -= buf_size;
     return buf_size;
 }
@@ -171,7 +174,7 @@ struct DecodeAudio decode_audio(const char* input_path, int probe, struct Decode
 	struct DecodeAudio audio = { 0 };
 
 	AVIOContext* io_ctx = NULL;
-	AVFormatContext* fmt_ctx = NULL;
+	AVFormatContext* fmt_ctx = avformat_alloc_context();
 	AVCodecContext* dec_ctx = NULL;
 	AVPacket* pkt = NULL;
 	char filter_args[1024];
@@ -194,7 +197,7 @@ struct DecodeAudio decode_audio(const char* input_path, int probe, struct Decode
 
 	if(input_path == NULL)
 	{
-		int avio_ctx_buffer_size = 4096;
+		size_t avio_ctx_buffer_size = 1* 4096;
     	avio_ctx_buffer = av_malloc(avio_ctx_buffer_size);
 		assert(avio_ctx_buffer);
     	
@@ -207,25 +210,28 @@ struct DecodeAudio decode_audio(const char* input_path, int probe, struct Decode
 			goto end;
 		}
 
-		fmt_ctx = avformat_alloc_context();
 		fmt_ctx->pb = io_ctx;
 	}
 
+	//printf("decode_audio_BEFORE__: %.2f msec\n", (float)(clock() - tic) * 1000 / CLOCKS_PER_SEC);
+	AVDictionary* format_opts = NULL;
+
+	fmt_ctx->format_probesize = 2048;
 	if (avformat_open_input(&fmt_ctx, input_path, NULL, NULL) != 0)
 	{
 		strcpy(audio.error, "Cannot open file");
 		goto end;
 	}
 
-	//fmt_ctx->probesize = 1;
-	//fmt_ctx->max_analyze_duration = 0.01 / AV_TIME_BASE;
-	printf("decode_audio_BEFORE: %.2f msec\n", (float)(clock() - tic) * 1000 / CLOCKS_PER_SEC);
+	fmt_ctx->streams[0]->probe_packets = 1;
+	//fmt_ctx->streams[0]->probesize = 2048;
+	//printf("decode_audio_BEFORE: %.2f msec\n", (float)(clock() - tic) * 1000 / CLOCKS_PER_SEC);
 	if (avformat_find_stream_info(fmt_ctx, NULL) < 0)
 	{
 		strcpy(audio.error, "Cannot open find stream information");
 		goto end;
 	}
-	printf("decode_audio_AFTER: %.2f msec\n", (float)(clock() - tic) * 1000 / CLOCKS_PER_SEC);
+	//printf("decode_audio_AFTER: %.2f msec\n", (float)(clock() - tic) * 1000 / CLOCKS_PER_SEC);
 	
 
 	int stream_index = av_find_best_stream(fmt_ctx, AVMEDIA_TYPE_AUDIO, -1, -1, NULL, 0);
@@ -471,23 +477,24 @@ int main(int argc, char **argv)
 	
 	struct DecodeAudio input_options = { 0 }, output_options = { 0 };
 	
-	clock_t tic = clock();
-	struct DecodeAudio audio = decode_audio(argv[1], true, input_options, output_options, argc == 4 ? argv[3] : NULL);
-	printf("decode_audio: %.2f msec\n", (float)(clock() - tic) * 1000 / CLOCKS_PER_SEC);
+	//struct DecodeAudio audio = decode_audio(argv[1], false, input_options, output_options, argc == 4 ? argv[3] : NULL);
 
-	//char buf[100000];
-	//int64_t read = fread(buf, 1, sizeof(buf), fopen(argv[1], "r"));
-	//input_options.data.dl_tensor.data = &buf;
-	//input_options.data.dl_tensor.ndim = 1;
-	//input_options.data.dl_tensor.shape = &read;
-	//input_options.data.dl_tensor.dtype.lanes = 1;
-	//input_options.data.dl_tensor.dtype.bits = 8;
-	//input_options.data.dl_tensor.dtype.code = kDLUInt;
-	//struct DecodeAudio audio = decode_audio(NULL, false, input_options, output_options, argc == 4 ? argv[3] : NULL);
+	char buf[100000];
+	int64_t read = fread(buf, 1, sizeof(buf), fopen(argv[1], "r"));
+	input_options.data.dl_tensor.data = &buf;
+	input_options.data.dl_tensor.ndim = 1;
+	input_options.data.dl_tensor.shape = &read;
+	input_options.data.dl_tensor.dtype.lanes = 1;
+	input_options.data.dl_tensor.dtype.bits = 8;
+	input_options.data.dl_tensor.dtype.code = kDLUInt;
 	
-	printf("Error: [%s]\n", audio.error);
-	printf("ffplay -i %s\n", argv[1]);
-	printf("ffplay -f %s -ac %d -ar %d -i %s # num samples: %d\n", audio.fmt, (int)audio.num_channels, (int)audio.sample_rate, argv[2], (int)audio.num_samples);
-	fwrite(audio.data.dl_tensor.data, audio.itemsize, audio.num_samples * audio.num_channels, fopen(argv[2], "wb"));
+	clock_t tic = clock();
+	struct DecodeAudio audio = decode_audio(NULL, false, input_options, output_options, argc == 4 ? argv[3] : NULL);
+	printf("decode_audio: %.2f msec\n", (float)(clock() - tic) * 1000 / CLOCKS_PER_SEC);
+	
+	//printf("Error: [%s]\n", audio.error);
+	//printf("ffplay -i %s\n", argv[1]);
+	//printf("ffplay -f %s -ac %d -ar %d -i %s # num samples: %d\n", audio.fmt, (int)audio.num_channels, (int)audio.sample_rate, argv[2], (int)audio.num_samples);
+	//fwrite(audio.data.dl_tensor.data, audio.itemsize, audio.num_samples * audio.num_channels, fopen(argv[2], "wb"));
 	return 0;
 }
