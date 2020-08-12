@@ -6,6 +6,7 @@ At the bottom is an example of alternative solution using process launching. The
 
 It is also a simple primer on FFmpeg audio decoding loop and basic ctypes usage for interfacing C code and NumPy/PyTorch (without creating a full-blown PyTorch C++ extension).
 
+### Usage
 ```shell
 # install dependencies: ffmpeg executables and shared libraries on ubuntu
 apt-get install -y ffmpeg libavcodec-dev libavformat-dev libavfilter-dev
