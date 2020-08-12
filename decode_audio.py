@@ -47,7 +47,7 @@ class DLDataType(ctypes.Structure):
 		return [('f' + str(l), typestr) for l in range(self.lanes)]
 
 	def __str__(self):
-		return repr(self.descr) if len(self.descr) > 1 else self.descr[0][1]
+		return repr(self.descr) if len(self.descr) != 1 else self.descr[0][1]
 
 class DLContext(ctypes.Structure):
 	_fields_ = [
@@ -120,40 +120,35 @@ class DecodeAudio(ctypes.Structure):
 	
 	def __init__(self, lib_path = os.path.abspath('decode_audio_ffmpeg.so')):
 		self.lib = ctypes.CDLL(lib_path)
-		self.lib.decode_audio.argtypes = [ctypes.c_char_p, ctypes.c_int, DecodeAudio, DecodeAudio, ctypes.c_char_p]
+		self.lib.decode_audio.argtypes = [ctypes.c_char_p, DecodeAudio, DecodeAudio, ctypes.c_char_p, ctypes.c_int, ctypes.c_int] 
 		self.lib.decode_audio.restype = DecodeAudio	
 
 	def __str__(self):
 		return f'num_samples={self.num_samples}, num_channels={self.num_channels}, sample_fmt={self.fmt.decode()}, {self.data.dl_tensor}'
 
-	def __call__(self, input_path = None, probe = False, input_buffer = None, output_buffer = None, sample_rate = None, filter_string = ''):
+	def __call__(self, input_path = None,  input_buffer = None, output_buffer = None, filter_string = '', sample_rate = None, probe = False, verbose = False):
 		uint8 = DLDataType(lanes = 1, bits = 8, code = DLDataTypeCode.kDLUInt)
-		shape_single_dim = lambda buffer_len: ctypes.cast(ctypes.addressof(buffer_len), ctypes.POINTER(ctypes.c_int64))
-
 		input_options = DecodeAudio()
 		output_options = DecodeAudio()
 		
-		input_buffer_len = ctypes.c_int64(len(input_buffer) if input_buffer is not None else 0)
-		output_buffer_len = ctypes.c_int64(len(output_buffer) if output_buffer is not None else 0)
 		if input_buffer is not None:
 			#input_options.data.dl_tensor.data = ctypes.cast(input_buffer, ctypes.c_void_p)
 			#input_options.data.dl_tensor.data = input_buffer.ctypes.data_as(ctypes.c_void_p)
 			input_options.data.dl_tensor.data = ctypes.c_void_p(input_buffer.__array_interface__['data'][0])
-			
-			input_options.data.dl_tensor.shape = shape_single_dim(input_buffer_len)
+			input_options.data.dl_tensor.shape = (ctypes.c_int64 * 1)(len(input_buffer))
 			input_options.data.dl_tensor.ndim = 1
 			input_options.data.dl_tensor.dtype = uint8
 
 		if output_buffer is not None:
 			output_options.data.dl_tensor.data = ctypes.cast((ctypes.c_char * len(input_buffer)).from_buffer(memoryview(output_buffer)), ctypes.c_void_p) 
-			output_options.data.dl_tensor.shape = shape_single_dim(output_buffer_len)
+			output_options.data.dl_tensor.shape = (ctypes.c_int64 * 1)(len(output_buffer))
 			output_options.data.dl_tensor.ndim = 1
 			output_options.data.dl_tensor.dtype = uint8
 		
 		if sample_rate is not None:
 			output_options.sample_rate = sample_rate
 
-		audio = self.lib.decode_audio(input_path.encode() if input_path else None, probe, input_options, output_options, filter_string.encode() if filter_string else None)
+		audio = self.lib.decode_audio(input_path.encode() if input_path else None, input_options, output_options, filter_string.encode() if filter_string else None, probe, verbose)
 		if audio.error:
 			raise Exception(audio.error.decode())
 		return audio
@@ -181,16 +176,17 @@ if __name__ == '__main__':
 	parser.add_argument('--input-path', '-i', default = 'test.wav')
 	parser.add_argument('--output-path', '-o', default = 'numpy.raw')
 	parser.add_argument('--buffer', action = 'store_true')
-	parser.add_argument('--probe', action = 'store_true')
 	parser.add_argument('--sample-rate', type = int)
 	parser.add_argument('--filter', default = '')#volume=volume=3.0') 
+	parser.add_argument('--probe', action = 'store_true')
+	parser.add_argument('--verbose', action = 'store_true')
 	args = parser.parse_args()
 	
 	def measure(k, f, audio_path, K = 100, timer = time.process_time, **kwargs):
 		tic = timer()
 		for i in range(K):
 			audio = f(audio_path, **kwargs)
-		print(k, (timer() - tic) * 1000 / K, 'msec')
+		print(k, (timer() - tic) * 1e6 / K, 'microsec')
 		return audio
 
 	measure('scipy.io.wavfile.read', scipy.io.wavfile.read, args.input_path)
@@ -201,7 +197,7 @@ if __name__ == '__main__':
 	input_buffer_ = open(args.input_path, 'rb').read()
 	input_buffer = numpy.frombuffer(input_buffer_, dtype = numpy.uint8)
 	output_buffer = bytearray(b'\0' * 1000000) #numpy.zeros((1_000_000), dtype = numpy.uint8)
-	audio = measure('ffmpeg', decode_audio, args.input_path if not args.buffer else None, input_buffer = input_buffer if args.buffer else None, output_buffer = output_buffer if args.buffer else None, filter_string = args.filter, probe = args.probe, sample_rate = args.sample_rate)
+	audio = measure('ffmpeg', decode_audio, args.input_path if not args.buffer else None, input_buffer = input_buffer if args.buffer else None, output_buffer = output_buffer if args.buffer else None, filter_string = args.filter, sample_rate = args.sample_rate, probe = args.probe, verbose = args.verbose)
 
 	print('ffplay', '-f', audio.fmt.decode(), '-ac', audio.num_channels, '-ar', audio.sample_rate, '-i', args.input_path, '#', audio)
 	if not args.probe:

@@ -4,7 +4,8 @@ LIBS_FFMPEG = -lavformat -lavcodec -lavfilter -lavutil
 
 SHAREDFLAGS = -shared -fPIC
 
-CFLAGS = -g
+#CFLAGS = -g
+CFLAGS = -O3
 
 ffmpeg: avio_reading decode_audio_ffmpeg decode_audio_ffmpeg.so
 
